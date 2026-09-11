@@ -10,7 +10,6 @@ const IMAGE_EXTENSIONS = [
   'png',
   'gif',
   'bmp',
-  'svg',
   'webp',
   'ico',
   'tiff',

@@ -1720,7 +1720,7 @@ describe('Server Integration Tests', () => {
         { filename: 'logo.png', expectedType: 'image/png' },
         { filename: 'animation.gif', expectedType: 'image/gif' },
         { filename: 'bitmap.bmp', expectedType: 'image/bmp' },
-        { filename: 'vector.svg', expectedType: 'image/svg+xml' },
+        { filename: 'vector.svg', expectedType: 'text/plain; charset=utf-8' },
         { filename: 'modern.webp', expectedType: 'image/webp' },
         { filename: 'favicon.ico', expectedType: 'image/x-icon' },
         { filename: 'photo.tiff', expectedType: 'image/tiff' },

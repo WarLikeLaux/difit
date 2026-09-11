@@ -630,7 +630,7 @@ export async function startServer(
         png: 'image/png',
         gif: 'image/gif',
         bmp: 'image/bmp',
-        svg: 'image/svg+xml',
+        svg: 'text/plain; charset=utf-8',
         webp: 'image/webp',
         ico: 'image/x-icon',
         tiff: 'image/tiff',

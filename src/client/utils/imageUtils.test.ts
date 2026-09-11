@@ -13,7 +13,6 @@ describe('imageUtils', () => {
         'logo.png',
         'animation.gif',
         'bitmap.bmp',
-        'vector.svg',
         'modern.webp',
         'favicon.ico',
         'photo.tiff',
@@ -35,7 +34,6 @@ describe('imageUtils', () => {
         'logo.PNG',
         'animation.GIF',
         'bitmap.BMP',
-        'vector.SVG',
         'modern.WEBP',
         'favicon.ICO',
         'Photo.Jpg',
@@ -61,6 +59,7 @@ describe('imageUtils', () => {
         'spreadsheet.xlsx',
         'code.tsx',
         'config.yml',
+        'vector.svg',
       ];
 
       nonImageFiles.forEach((filename) => {

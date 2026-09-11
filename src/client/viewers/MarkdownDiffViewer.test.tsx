@@ -318,6 +318,22 @@ describe('MarkdownDiffViewer', () => {
     expect(container.querySelector('svg')).toBeInTheDocument();
   });
 
+  it('sanitizes active content and remote resources from Mermaid SVG', async () => {
+    vi.mocked(mermaid.render).mockResolvedValueOnce({
+      svg: '<svg><script>alert(1)</script><image href="https://attacker.example/pixel.png" onload="alert(1)"/><text>Safe</text></svg>',
+      bindFunctions: undefined,
+      diagramType: 'flowchart',
+    });
+    const { container } = renderViewer({ mergedChunks: mermaidChunks });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Diff Preview' }));
+
+    await waitFor(() => expect(container.querySelector('svg')).toBeInTheDocument());
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('[onload]')).toBeNull();
+    expect(container.querySelector('[href^="https:"]')).toBeNull();
+  });
+
   it('renders comment-only markdown lines as plain text in Diff Preview', () => {
     renderViewer({ mergedChunks: htmlCommentChunks });
 

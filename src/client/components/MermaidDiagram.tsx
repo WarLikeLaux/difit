@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import DOMPurify from 'dompurify';
 
 import { getResolvedTheme, type ResolvedTheme } from '../utils/appearanceTheme';
 
@@ -16,6 +17,9 @@ const loadMermaid = () => {
 };
 
 const getMermaidTheme = (theme: ResolvedTheme) => (theme === 'light' ? 'default' : 'dark');
+
+const LOCAL_SVG_URI_PATTERN =
+  /^(?:#|\/(?!\/)|\.\.?\/|data:image\/(?:png|jpeg|gif|webp|avif);base64,)/i;
 
 export function MermaidDiagram({ chart }: MermaidDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,10 +72,16 @@ export function MermaidDiagram({ chart }: MermaidDiagramProps) {
         });
 
         const { svg, bindFunctions } = await mermaid.render(`mermaid-diagram-${diagramId}`, chart);
+        const sanitizedSvg = DOMPurify.sanitize(svg, {
+          USE_PROFILES: { svg: true, svgFilters: true },
+          FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
+          ALLOWED_URI_REGEXP: LOCAL_SVG_URI_PATTERN,
+          RETURN_TRUSTED_TYPE: false,
+        });
 
         if (isCancelled) return;
 
-        container.innerHTML = svg;
+        container.innerHTML = sanitizedSvg;
         bindFunctions?.(container);
       } catch (error) {
         if (isCancelled) return;
