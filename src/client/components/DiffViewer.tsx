@@ -378,6 +378,7 @@ export const DiffViewer = memo(function DiffViewer({
     >
       <DiffViewerHeader
         file={file}
+        reviewUrl={reviewUrl}
         isCollapsed={isCollapsed}
         isFocused={isFocused}
         isReviewed={reviewedFiles.has(file.path)}

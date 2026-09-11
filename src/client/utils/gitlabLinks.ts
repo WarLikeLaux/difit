@@ -2,6 +2,14 @@ import type { DiffLine } from '../../types/diff';
 
 const textEncoder = new TextEncoder();
 
+export function buildGitLabDiffFileUrl(mergeRequestUrl: string, filePath: string): string {
+  const baseUrl = mergeRequestUrl.replace(/\/diffs\/?$/, '').replace(/\/$/, '');
+  const url = new URL(`${baseUrl}/diffs`);
+  url.searchParams.set('file_path', filePath);
+
+  return url.toString();
+}
+
 export function getGitLabLineFragment(line: DiffLine | undefined): string | undefined {
   if (!line) return undefined;
   if (line.type === 'add') {
@@ -20,9 +28,7 @@ export async function buildGitLabDiffLineUrl(
   const fileHash = Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
-  const baseUrl = mergeRequestUrl.replace(/\/diffs\/?$/, '').replace(/\/$/, '');
-  const url = new URL(`${baseUrl}/diffs`);
-  url.searchParams.set('file_path', filePath);
+  const url = new URL(buildGitLabDiffFileUrl(mergeRequestUrl, filePath));
   url.hash = `line_${fileHash.slice(0, 9)}_${lineFragment}`;
 
   return url.toString();

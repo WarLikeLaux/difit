@@ -48,4 +48,22 @@ describe('DiffViewerHeader', () => {
       screen.queryByLabelText('Updated since you last viewed this file'),
     ).not.toBeInTheDocument();
   });
+
+  it('links the file header to its GitLab diff', () => {
+    render(
+      <DiffViewerHeader
+        {...baseProps}
+        reviewUrl="https://gitlab.example.com/group/project/-/merge_requests/123/diffs"
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Open src/app.ts in GitLab diff' })).toHaveAttribute(
+      'href',
+      'https://gitlab.example.com/group/project/-/merge_requests/123/diffs?file_path=src%2Fapp.ts',
+    );
+    expect(screen.getByRole('link', { name: 'Open src/app.ts in GitLab diff' })).toHaveAttribute(
+      'target',
+      '_blank',
+    );
+  });
 });

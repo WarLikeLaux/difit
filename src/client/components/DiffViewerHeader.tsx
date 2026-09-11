@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  ExternalLink,
   FileDiff,
   FilePen,
   FilePlus,
@@ -13,6 +14,7 @@ import { useState } from 'react';
 
 import type { DiffFile } from '../../types/diff';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { buildGitLabDiffFileUrl } from '../utils/gitlabLinks';
 
 interface DiffViewerHeaderProps {
   file: DiffFile;
@@ -20,6 +22,7 @@ interface DiffViewerHeaderProps {
   isFocused?: boolean;
   isReviewed: boolean;
   isChangedSinceViewed?: boolean;
+  reviewUrl?: string;
   onToggleCollapsed: (path: string) => void;
   onToggleAllCollapsed: (shouldCollapse: boolean) => void;
   onToggleReviewed: (path: string) => void;
@@ -44,6 +47,7 @@ export const DiffViewerHeader = ({
   isFocused = false,
   isReviewed,
   isChangedSinceViewed = false,
+  reviewUrl,
   onToggleCollapsed,
   onToggleAllCollapsed,
   onToggleReviewed,
@@ -100,6 +104,18 @@ export const DiffViewerHeader = ({
         >
           {isCopied ? <Check size={14} /> : <Copy size={14} />}
         </button>
+        {reviewUrl && (
+          <a
+            href={buildGitLabDiffFileUrl(reviewUrl, file.path)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded bg-transparent px-1.5 py-1 text-github-text-secondary transition-all hover:bg-github-bg-tertiary hover:text-github-text-primary"
+            title="Open file in GitLab diff"
+            aria-label={`Open ${file.path} in GitLab diff`}
+          >
+            <ExternalLink size={14} />
+          </a>
+        )}
         {file.oldPath && file.oldPath !== file.path && (
           <span className="text-xs text-github-text-muted italic">
             (renamed from {file.oldPath})

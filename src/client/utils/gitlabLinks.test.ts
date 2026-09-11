@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildGitLabDiffLineUrl, getGitLabLineFragment } from './gitlabLinks';
+import {
+  buildGitLabDiffFileUrl,
+  buildGitLabDiffLineUrl,
+  getGitLabLineFragment,
+} from './gitlabLinks';
+
+describe('buildGitLabDiffFileUrl', () => {
+  it('builds a Rapid Diffs link for a file', () => {
+    expect(
+      buildGitLabDiffFileUrl(
+        'https://gitlab.example.com/group/project/-/merge_requests/123/diffs',
+        'src/services/logger.ts',
+      ),
+    ).toBe(
+      'https://gitlab.example.com/group/project/-/merge_requests/123/diffs?file_path=src%2Fservices%2Flogger.ts',
+    );
+  });
+});
 
 describe('getGitLabLineFragment', () => {
   it('prefixes added line numbers with A', () => {
