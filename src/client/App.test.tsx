@@ -206,88 +206,15 @@ describe('App Component - Clear Comments Functionality', () => {
     mockFetch(mockDiffResponse);
   });
 
-  describe('Copy All Prompt Button', () => {
-    it('should generate Copy All Prompt with requested and resolved diff context', async () => {
-      mockComments = [
-        createMockThread({ id: 'test-1', filePath: 'test.ts', line: 10, body: 'Test comment' }),
-      ];
-      mockFetch({
-        ...mockDiffResponse,
-        baseCommitish: 'abcdef1',
-        targetCommitish: '1234567',
-        requestedBaseCommitish: 'main',
-        requestedTargetCommitish: 'feature/docs-update',
-        requestedBaseMode: 'merge-base',
-      });
+  it('does not render the copy-all prompt action', async () => {
+    mockComments = [
+      createMockThread({ id: 'test-1', filePath: 'test.ts', line: 10, body: 'Test comment' }),
+    ];
 
-      renderApp();
+    renderApp();
 
-      fireEvent.click(await screen.findByText(/Copy All Prompt/));
-
-      await waitFor(() => {
-        expect(mockGenerateAllCommentsPrompt).toHaveBeenCalledWith({
-          requestedBaseCommitish: 'main',
-          requestedTargetCommitish: 'feature/docs-update',
-          baseMode: 'merge-base',
-          resolvedBaseCommitish: 'abcdef1',
-          resolvedTargetCommitish: '1234567',
-        });
-      });
-    });
-  });
-
-  describe('Cleanup All Prompt Button', () => {
-    it('should not show delete button when no comments exist', async () => {
-      mockComments = [];
-
-      renderApp();
-
-      await waitFor(() => {
-        // Cleanup All Prompt should not be visible without comments (dropdown doesn't exist)
-        expect(screen.queryByText('Copy All Prompt')).not.toBeInTheDocument();
-        expect(screen.queryByText('Cleanup All Prompt')).not.toBeInTheDocument();
-      });
-    });
-
-    it('should show delete button when comments exist', async () => {
-      mockComments = [
-        createMockThread({ id: 'test-1', filePath: 'test.ts', line: 10, body: 'Test comment' }),
-      ];
-
-      renderApp();
-
-      await waitFor(() => {
-        // Find and click the dropdown toggle button (chevron)
-        const dropdownToggle = screen.getByTitle('More options');
-        fireEvent.click(dropdownToggle);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Cleanup All Prompt')).toBeInTheDocument();
-      });
-    });
-
-    it('should call clearAllComments immediately when delete button is clicked', async () => {
-      mockComments = [
-        createMockThread({ id: '1', filePath: 'test.ts', line: 10, body: 'Comment 1' }),
-        createMockThread({ id: '2', filePath: 'test.ts', line: 20, body: 'Comment 2' }),
-      ];
-
-      renderApp();
-
-      await waitFor(() => {
-        // First, open the dropdown
-        const dropdownToggle = screen.getByTitle('More options');
-        fireEvent.click(dropdownToggle);
-      });
-
-      await waitFor(() => {
-        const deleteButton = screen.getByText('Cleanup All Prompt');
-        fireEvent.click(deleteButton);
-      });
-
-      expect(mockClearAllComments).toHaveBeenCalled();
-    });
+    await screen.findAllByText('test.ts');
+    expect(screen.queryByText(/Copy All Prompt/)).not.toBeInTheDocument();
   });
 
   describe('Clean flag on Startup', () => {

@@ -29,7 +29,6 @@ import {
 } from '../utils/diffSelection';
 
 import { Checkbox } from './components/Checkbox';
-import { CommentsDropdown } from './components/CommentsDropdown';
 import { CommentsView } from './components/CommentsView';
 import { DiffQuickMenu } from './components/DiffQuickMenu';
 import { DiffViewer } from './components/DiffViewer';
@@ -147,7 +146,6 @@ function App() {
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isCopiedAll, setIsCopiedAll] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(getInitialSidebarWidth);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFileTreeOpen, setIsFileTreeOpen] = useState(getInitialFileTreeOpen);
@@ -223,7 +221,6 @@ function App() {
   threadsRef.current = threads;
 
   const showMobileCommentsBar = isMobile && mainView === 'diff' && threads.length > 0;
-  const unresolvedThreadsCount = threads.filter((thread) => !thread.resolvedAt).length;
   const commentsContextKey = useMemo(() => {
     if (!resolvedSelectionKey) {
       return null;
@@ -1120,8 +1117,6 @@ function App() {
         resolvedTargetCommitish: diffData?.targetCommitish,
       });
       await copyTextToClipboard(prompt);
-      setIsCopiedAll(true);
-      setTimeout(() => setIsCopiedAll(false), 2000);
     } catch (error) {
       console.error('Failed to copy all comments prompt:', error);
     }
@@ -1369,16 +1364,6 @@ function App() {
                 isMobile ? 'gap-3' : 'gap-4'
               }`}
             >
-              {!isMobile && threads.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <CommentsDropdown
-                    commentsCount={unresolvedThreadsCount}
-                    isCopiedAll={isCopiedAll}
-                    onCopyAll={handleCopyAllComments}
-                    onDeleteAll={clearAllComments}
-                  />
-                </div>
-              )}
               <div className="flex flex-col gap-1 items-center">
                 <div className="text-xs relative">
                   {viewedFiles.size === diffData.files.length
@@ -1665,14 +1650,6 @@ function App() {
               <List size={12} />
               Threads ({threads.length})
             </button>
-            <CommentsDropdown
-              commentsCount={unresolvedThreadsCount}
-              isCopiedAll={isCopiedAll}
-              onCopyAll={handleCopyAllComments}
-              onDeleteAll={clearAllComments}
-              direction="up"
-              compact
-            />
           </div>
         )}
 

@@ -304,6 +304,7 @@ describe('CommentThreadCard', () => {
       />,
     );
 
+    expect(screen.queryByText(/Copy Prompt/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Collapse thread' }));
 
     // Messages and actions are hidden; a one-line summary with the count remains

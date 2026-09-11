@@ -2,7 +2,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Copy,
   Edit2,
   ExternalLink,
   FileCode2,
@@ -233,7 +232,6 @@ export function CommentThreadCard({
   confirmRootAction = true,
   reviewUrl,
   gitLabLine,
-  onGeneratePrompt,
   onRemoveThread,
   onDeleteThread,
   onThreadStatusChange,
@@ -246,7 +244,6 @@ export function CommentThreadCard({
   onClick,
   syntaxTheme,
 }: CommentThreadCardProps) {
-  const [isCopied, setIsCopied] = useState(false);
   const [isFileCopied, setIsFileCopied] = useState(false);
   const [reviewLineUrl, setReviewLineUrl] = useState<string>();
   const [isReplying, setIsReplying] = useState(false);
@@ -305,18 +302,6 @@ export function CommentThreadCard({
     setIsCollapsed((prev) => !prev);
   };
 
-  const handleCopyThread = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const prompt = onGeneratePrompt(thread);
-      await copyTextToClipboard(prompt);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy thread prompt:', error);
-    }
-  };
-
   const handleCopyFile = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
@@ -361,7 +346,7 @@ export function CommentThreadCard({
       onClick={onClick}
     >
       <div className={isCollapsed ? '' : 'mb-3'}>
-        <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex flex-wrap items-start gap-2">
           <div className="flex min-w-[12rem] flex-1 items-center gap-2 text-xs text-github-text-secondary">
             <button
               type="button"
@@ -436,30 +421,30 @@ export function CommentThreadCard({
               </button>
             )}
           </div>
+          {!isCollapsed && onThreadStatusChange && (
+            <div className="inline-flex overflow-hidden rounded border border-github-border">
+              {(['open', 'accepted', 'resolved'] as const).map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  aria-pressed={threadStatus === status}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onThreadStatusChange(status);
+                  }}
+                  className={`border-r border-github-border px-2 py-1 text-xs capitalize transition-colors last:border-r-0 ${
+                    threadStatus === status
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
+          )}
           {!isCollapsed && (
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
-              {onThreadStatusChange && (
-                <div className="inline-flex overflow-hidden rounded border border-github-border">
-                  {(['open', 'accepted', 'resolved'] as const).map((status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      aria-pressed={threadStatus === status}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onThreadStatusChange(status);
-                      }}
-                      className={`border-r border-github-border px-2 py-1 text-xs capitalize transition-colors last:border-r-0 ${
-                        threadStatus === status
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
-                      }`}
-                    >
-                      {status}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
               {onNavigateToCode && (
                 <button
                   type="button"
@@ -496,22 +481,6 @@ export function CommentThreadCard({
                 <span className="inline-flex items-center gap-1">
                   <FileCode2 size={12} />
                   {isFileCopied ? 'Copied!' : 'Copy File'}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={handleCopyThread}
-                className="whitespace-nowrap rounded px-2 py-1 text-xs transition-all"
-                style={{
-                  backgroundColor: 'var(--color-yellow-btn-bg)',
-                  color: 'var(--color-yellow-btn-text)',
-                  border: '1px solid var(--color-yellow-btn-border)',
-                }}
-                title="Copy thread prompt for AI coding agent"
-              >
-                <span className="inline-flex items-center gap-1">
-                  <Copy size={12} />
-                  {isCopied ? 'Copied!' : 'Copy Prompt'}
                 </span>
               </button>
               {thread.messages.length > 1 && (
