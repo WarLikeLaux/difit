@@ -1,6 +1,8 @@
 packages:
   - .
   - packages/*
+overrides:
+  path-to-regexp: 8.4.0
 allowBuilds:
   '@parcel/watcher': true
   '@vscode/vsce-sign': true

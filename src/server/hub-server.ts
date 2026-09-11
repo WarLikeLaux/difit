@@ -9,6 +9,7 @@ import type { DiffCommentThread } from '../types/diff.js';
 import { readCommentSessions } from './comment-storage.js';
 import { getReviewBranchState, type ReviewContext } from './review-context.js';
 import { readReviewRegistrations, type ReviewRegistration } from './review-registry.js';
+import { restrictRequestHosts, restrictRequestOrigins } from './request-security.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -187,6 +188,8 @@ export async function startHubServer(
 ): Promise<{ port: number; url: string; server: Server }> {
   const app = express();
   app.enable('strict routing');
+  app.use(restrictRequestHosts(['difit.local', host]));
+  app.use(restrictRequestOrigins(['difit.local']));
   const clients = new Set<import('express').Response>();
 
   app.get('/api/reviews', async (_req, res) => {

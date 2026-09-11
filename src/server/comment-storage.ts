@@ -4,6 +4,8 @@ import { dirname, join } from 'path';
 
 import type { DiffCommentThread } from '../types/diff.js';
 
+import { ensurePrivateDirectory, writePrivateFile } from './private-storage.js';
+
 export interface StoredCommentSession {
   threads: DiffCommentThread[];
   version: number;
@@ -69,8 +71,7 @@ export async function writeCommentSessions(
     2,
   )}\n`;
 
-  await fs.mkdir(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${process.pid}.tmp`;
-  await fs.writeFile(temporaryPath, serialized, 'utf-8');
-  await fs.rename(temporaryPath, path);
+  await ensurePrivateDirectory(getCommentStorageDirectory());
+  await ensurePrivateDirectory(dirname(path));
+  await writePrivateFile(path, serialized);
 }

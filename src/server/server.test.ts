@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs';
+import { request as createHttpRequest } from 'http';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -469,6 +470,67 @@ describe('Server Integration Tests', () => {
       expect(data).toHaveProperty('openInEditorAvailable', true);
       expect(data).toHaveProperty('requestedBaseCommitish', 'HEAD^');
       expect(data).toHaveProperty('requestedTargetCommitish', 'HEAD');
+    });
+
+    it('rejects requests with an untrusted Host header', async () => {
+      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const request = createHttpRequest(
+          {
+            hostname: '127.0.0.1',
+            port,
+            path: '/api/diff',
+            headers: { host: 'attacker.example' },
+          },
+          (result) => {
+            let body = '';
+            result.setEncoding('utf8');
+            result.on('data', (chunk: string) => {
+              body += chunk;
+            });
+            result.on('end', () => resolve({ status: result.statusCode ?? 0, body }));
+          },
+        );
+        request.on('error', reject);
+        request.end();
+      });
+
+      expect(response.status).toBe(403);
+      expect(JSON.parse(response.body)).toEqual({ error: 'Host is not allowed' });
+    });
+
+    it('rejects browser requests from an untrusted Origin', async () => {
+      const response = await fetch(`http://localhost:${port}/api/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+          Origin: 'https://attacker.example',
+        },
+        body: JSON.stringify({ threads: [] }),
+      });
+
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({ error: 'Origin is not allowed' });
+    });
+
+    it('rejects custom editor commands from HTTP requests', async () => {
+      const response = await fetch(`http://localhost:${port}/api/open-in-editor`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filePath: 'test.js',
+          line: 1,
+          editor: {
+            id: 'custom',
+            command: 'sh',
+            argsTemplate: '-c arbitrary-command',
+          },
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: 'Custom editor is not configured in local settings',
+      });
     });
 
     it('GET /api/diff returns a JSON 500 on parse failure and does not poison subsequent requests', async () => {
@@ -1512,21 +1574,29 @@ describe('Server Integration Tests', () => {
   });
 
   describe('CORS configuration', () => {
-    it('sets correct CORS headers', async () => {
+    it('allows only an explicit local browser origin', async () => {
       const result = await startServer({
         selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
       });
       servers.push(result.server);
 
-      const response = await fetch(`http://localhost:${result.port}/api/diff`);
+      const origin = 'http://localhost:5173';
+      const response = await fetch(`http://localhost:${result.port}/api/diff`, {
+        headers: { Origin: origin },
+      });
 
-      expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:*');
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBe(origin);
       expect(response.headers.get('Access-Control-Allow-Methods')).toBe(
         'GET, POST, PUT, PATCH, DELETE, OPTIONS',
       );
-      expect(response.headers.get('Access-Control-Allow-Headers')).toBe(
-        'Origin, X-Requested-With, Content-Type, Accept',
-      );
+      expect(response.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type');
+
+      const preflight = await fetch(`http://localhost:${result.port}/api/comments`, {
+        method: 'OPTIONS',
+        headers: { Origin: origin },
+      });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get('Access-Control-Allow-Origin')).toBe(origin);
     });
   });
 

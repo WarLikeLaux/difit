@@ -4,6 +4,8 @@ import { dirname, join } from 'path';
 
 import type { ReviewContext } from './review-context.js';
 
+import { ensurePrivateDirectory, writePrivateFile } from './private-storage.js';
+
 export interface ReviewRegistration {
   version: 1;
   id: string;
@@ -93,10 +95,9 @@ export async function registerReview(
 
   if (isReviewRegistryDisabled()) return registration;
 
-  await fs.mkdir(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${process.pid}.tmp`;
-  await fs.writeFile(temporaryPath, `${JSON.stringify(registration, null, 2)}\n`, 'utf8');
-  await fs.rename(temporaryPath, path);
+  await ensurePrivateDirectory(getConfigDirectory());
+  await ensurePrivateDirectory(dirname(path));
+  await writePrivateFile(path, `${JSON.stringify(registration, null, 2)}\n`);
   return registration;
 }
 

@@ -35,6 +35,7 @@ import {
   type ReviewBranchState,
 } from './review-context.js';
 import { registerReview } from './review-registry.js';
+import { restrictRequestHosts, restrictRequestOrigins } from './request-security.js';
 import { parseUserSettingsPatch, readUserConfig, updateUserClientSettings } from './user-config.js';
 
 import {
@@ -173,13 +174,8 @@ export async function startServer(
 
   app.use(express.json());
   app.use(express.text()); // For sendBeacon text/plain requests
-
-  app.use((_req, res, next) => {
-    res.header('Access-Control-Allow-Origin', 'http://localhost:*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-    next();
-  });
+  app.use(restrictRequestHosts(options.host ? [options.host] : []));
+  app.use(restrictRequestOrigins(['difit.local']));
 
   const readBranchState = async (): Promise<ReviewBranchState> =>
     reviewContext ? getReviewBranchState(reviewContext) : { stale: false };
@@ -280,23 +276,15 @@ export async function startServer(
 
   interface EditorRequest {
     readonly id: string | undefined;
-    readonly command: string | undefined;
-    readonly argsTemplate: string | undefined;
   }
 
   function parseEditorRequest(value: unknown): EditorRequest {
     if (!value || typeof value !== 'object') {
-      return { id: undefined, command: undefined, argsTemplate: undefined };
+      return { id: undefined };
     }
-    const candidate = value as {
-      id?: unknown;
-      command?: unknown;
-      argsTemplate?: unknown;
-    };
+    const candidate = value as { id?: unknown };
     return {
       id: typeof candidate.id === 'string' ? candidate.id : undefined,
-      command: typeof candidate.command === 'string' ? candidate.command : undefined,
-      argsTemplate: typeof candidate.argsTemplate === 'string' ? candidate.argsTemplate : undefined,
     };
   }
 
@@ -1155,33 +1143,40 @@ export async function startServer(
     const editorId =
       editorRequest.id ?? process.env.DIFIT_EDITOR ?? process.env.EDITOR ?? undefined;
 
-    if (editorId?.toLowerCase() === NONE_EDITOR_ID) {
-      res.status(400).json({ error: 'Open in editor is disabled' });
-      return;
-    }
-
-    // The browser always sends command + argsTemplate in the body, so we use
-    // those directly. We only fall back to the preset table when neither is
-    // provided (for example, when DIFIT_EDITOR is set and there's no body).
-    let command: string;
-    let argsTemplate: string;
-    if (editorRequest.command !== undefined || editorRequest.argsTemplate !== undefined) {
-      command = (editorRequest.command ?? '').trim();
-      argsTemplate = (editorRequest.argsTemplate ?? '').trim();
-    } else {
-      const preset = resolveEditorOption(editorId);
-      command = preset.command;
-      argsTemplate = preset.argsTemplate;
-    }
-
-    if (!command || !argsTemplate) {
-      const isCustom = editorId?.toLowerCase() === CUSTOM_EDITOR_ID;
+    const preset = resolveEditorOption(editorId);
+    if (preset.id === NONE_EDITOR_ID) {
       res.status(400).json({
-        error: isCustom
-          ? 'Custom editor is not configured. Set a command and arguments in Settings > System.'
-          : 'Open in editor is not configured',
+        error: 'Open in editor is disabled',
       });
       return;
+    }
+
+    let command = preset.command;
+    let argsTemplate = preset.argsTemplate;
+    if (preset.id === CUSTOM_EDITOR_ID) {
+      const storedConfig = await readUserConfig();
+      const storedEditor = storedConfig.client.editor;
+      if (!storedEditor || typeof storedEditor !== 'object' || Array.isArray(storedEditor)) {
+        res.status(400).json({ error: 'Custom editor is not configured in local settings' });
+        return;
+      }
+      const candidate = storedEditor as {
+        id?: unknown;
+        command?: unknown;
+        argsTemplate?: unknown;
+      };
+      if (
+        candidate.id !== CUSTOM_EDITOR_ID ||
+        typeof candidate.command !== 'string' ||
+        typeof candidate.argsTemplate !== 'string' ||
+        !candidate.command.trim() ||
+        !candidate.argsTemplate.trim()
+      ) {
+        res.status(400).json({ error: 'Custom editor is not configured in local settings' });
+        return;
+      }
+      command = candidate.command;
+      argsTemplate = candidate.argsTemplate;
     }
 
     const lineNumber = (() => {
