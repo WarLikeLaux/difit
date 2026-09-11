@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
 
 import type { DiffFile } from '../../types/diff';
@@ -28,6 +28,32 @@ function getLabel(title: string): HTMLElement {
 }
 
 describe('FileList', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('can show flat file paths and hide viewed files independently', () => {
+    render(
+      <FileList
+        files={[createFile('src/client/App.tsx'), createFile('README.md')]}
+        onScrollToFile={vi.fn()}
+        comments={[]}
+        reviewedFiles={new Set(['README.md'])}
+        onToggleReviewed={vi.fn()}
+        onToggleFolderReviewed={vi.fn()}
+        selectedFileIndex={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Flat files' }));
+    expect(screen.getByText('src/client/App.tsx')).toBeInTheDocument();
+    expect(screen.getByText('README.md')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide viewed' }));
+    expect(screen.getByText('src/client/App.tsx')).toBeInTheDocument();
+    expect(screen.queryByText('README.md')).not.toBeInTheDocument();
+  });
+
   it('filters files by text from all diff lines', () => {
     const matchingFile = createFile('src/matching.ts');
     matchingFile.chunks = [

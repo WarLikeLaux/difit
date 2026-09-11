@@ -1329,12 +1329,23 @@ function App() {
             }}
           >
             <h1>
-              <Logo
-                style={{
-                  height: '18px',
-                  color: 'var(--color-github-text-secondary)',
-                }}
-              />
+              {reviewsDashboardUrl ? (
+                <a href={reviewsDashboardUrl} title="Difit dashboard" aria-label="Difit dashboard">
+                  <Logo
+                    style={{
+                      height: '18px',
+                      color: 'var(--color-github-text-secondary)',
+                    }}
+                  />
+                </a>
+              ) : (
+                <Logo
+                  style={{
+                    height: '18px',
+                    color: 'var(--color-github-text-secondary)',
+                  }}
+                />
+              )}
             </h1>
             <div className="flex items-center gap-1">
               {reviewsDashboardUrl && (

@@ -11,6 +11,8 @@ import {
   MessageSquare,
   ChevronsDownUp,
   ChevronsUpDown,
+  EyeOff,
+  ListTree,
 } from 'lucide-react';
 import {
   memo,
@@ -52,6 +54,13 @@ const TREE_ROW_PADDING_LEFT_PX = 16;
 const TREE_ICON_SIZE_PX = 16;
 const TREE_ROW_GAP_PX = 8;
 const TREE_INDENT_STEP_PX = TREE_ICON_SIZE_PX + TREE_ROW_GAP_PX;
+const HIDE_VIEWED_STORAGE_KEY = 'difit.fileList.hideViewed';
+const FLAT_FILES_STORAGE_KEY = 'difit.fileList.flatFiles';
+
+function getStoredToggle(key: string): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.localStorage.getItem(key) === 'true';
+}
 
 export function fileMatchesCodeFilter(file: DiffFile, filterText: string): boolean {
   const normalizedFilter = filterText.trim().toLowerCase();
@@ -185,7 +194,8 @@ export const FileList = memo(function FileList({
   codeFilterText: controlledCodeFilterText,
   onCodeFilterTextChange,
 }: FileListProps) {
-  const fileTree = useMemo(() => buildFileTree(files), [files]);
+  const [hideViewed, setHideViewed] = useState(() => getStoredToggle(HIDE_VIEWED_STORAGE_KEY));
+  const [flatFiles, setFlatFiles] = useState(() => getStoredToggle(FLAT_FILES_STORAGE_KEY));
   const shouldUseStickyDirectoryHeaders = useMemo(
     () => !isSafariBrowser(typeof navigator === 'undefined' ? '' : navigator.userAgent),
     [],
@@ -196,10 +206,6 @@ export const FileList = memo(function FileList({
     '--dir-row-height': 'calc(var(--spacing, 0.25rem) * 9)',
   } as CSSProperties;
 
-  // Initialize with all directories expanded
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(
-    () => new Set(getAllDirectoryPaths(fileTree)),
-  );
   const [filterText, setFilterText] = useState('');
   const [localCodeFilterText, setLocalCodeFilterText] = useState('');
   const codeFilterText = controlledCodeFilterText ?? localCodeFilterText;
@@ -231,54 +237,26 @@ export const FileList = memo(function FileList({
       ),
     [files],
   );
+  const filteredFiles = useMemo(() => {
+    const normalizedFileFilter = filterText.trim().toLowerCase();
+    const normalizedCodeFilter = deferredCodeFilterText.trim().toLowerCase();
+    return files.filter(
+      (file) =>
+        (!hideViewed || !reviewedFiles.has(file.path)) &&
+        (!normalizedFileFilter || file.path.toLowerCase().includes(normalizedFileFilter)) &&
+        (!normalizedCodeFilter || fileMatchesCodeFilter(file, normalizedCodeFilter)),
+    );
+  }, [deferredCodeFilterText, files, filterText, hideViewed, reviewedFiles]);
+  const fileTree = useMemo(() => buildFileTree(filteredFiles), [filteredFiles]);
+
+  // Initialize with all directories expanded
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(
+    () => new Set(getAllDirectoryPaths(buildFileTree(files))),
+  );
   const reviewedDirectoryPaths = useMemo(
     () => getReviewedDirectoryPaths(fileTree, reviewedFiles),
     [fileTree, reviewedFiles],
   );
-
-  // Filter the file tree based on search text
-  const filteredFileTree = useMemo(() => {
-    const normalizedFileFilter = filterText.trim().toLowerCase();
-    const normalizedCodeFilter = deferredCodeFilterText.trim().toLowerCase();
-    const codeMatchingFilePaths = new Set(
-      normalizedCodeFilter
-        ? files
-            .filter((file) => fileMatchesCodeFilter(file, normalizedCodeFilter))
-            .map((file) => file.path)
-        : files.map((file) => file.path),
-    );
-
-    const filterTreeNode = (node: TreeNode): TreeNode | null => {
-      if (!normalizedFileFilter && !normalizedCodeFilter) return node;
-
-      if (node.isDirectory && node.children) {
-        const filteredChildren = node.children
-          .map((child) => filterTreeNode(child))
-          .filter((child) => child !== null);
-
-        if (filteredChildren.length > 0) {
-          return { ...node, children: filteredChildren };
-        }
-        return null;
-      } else if (node.file) {
-        const matchesFile =
-          !normalizedFileFilter || node.file.path.toLowerCase().includes(normalizedFileFilter);
-        if (matchesFile && codeMatchingFilePaths.has(node.file.path)) {
-          return node;
-        }
-        return null;
-      }
-
-      return null;
-    };
-
-    return (
-      filterTreeNode(fileTree) || {
-        ...fileTree,
-        children: [],
-      }
-    );
-  }, [deferredCodeFilterText, fileTree, files, filterText]);
 
   const getFileIcon = (status: DiffFile['status']) => {
     switch (status) {
@@ -315,6 +293,22 @@ export const FileList = memo(function FileList({
     } else {
       setExpandedDirs(new Set(allPaths));
     }
+  };
+
+  const toggleHideViewed = () => {
+    setHideViewed((current) => {
+      const next = !current;
+      window.localStorage.setItem(HIDE_VIEWED_STORAGE_KEY, String(next));
+      return next;
+    });
+  };
+
+  const toggleFlatFiles = () => {
+    setFlatFiles((current) => {
+      const next = !current;
+      window.localStorage.setItem(FLAT_FILES_STORAGE_KEY, String(next));
+      return next;
+    });
   };
 
   const handleDirectoryClick = (event: MouseEvent<HTMLDivElement>, path: string) => {
@@ -358,6 +352,54 @@ export const FileList = memo(function FileList({
     }
 
     toggleDirectory(path);
+  };
+
+  const renderFileRow = (file: DiffFile, label: string, depth: number): React.ReactNode => {
+    const commentCount = commentCountMap.get(file.path) ?? 0;
+    const isReviewed = reviewedFiles.has(file.path);
+    const fileIndex = fileIndexMap.get(file.path) ?? -1;
+    const isSelected = selectedFileIndex !== null && selectedFileIndex === fileIndex;
+
+    return (
+      <div
+        key={`file:${file.path}`}
+        className={`flex items-center gap-2 px-4 py-2 hover:bg-github-bg-tertiary cursor-pointer transition-colors ${
+          isReviewed ? 'opacity-70' : ''
+        } ${isSelected ? 'bg-github-bg-tertiary' : ''}`}
+        data-file-row="true"
+        data-tree-row="true"
+        data-depth={depth}
+        style={{ paddingLeft: getTreeRowPaddingLeft(depth) }}
+        onClick={() => {
+          onScrollToFile(file.path);
+          onFileSelected?.();
+        }}
+      >
+        <Checkbox
+          checked={isReviewed}
+          onChange={() => {
+            onToggleReviewed(file.path);
+          }}
+          title={isReviewed ? 'Mark as not reviewed' : 'Mark as reviewed'}
+          className="z-10"
+        />
+        {getFileIcon(file.status)}
+        <span
+          className={`text-sm text-github-text-primary flex-1 overflow-hidden text-ellipsis whitespace-nowrap ${
+            isReviewed ? 'line-through text-github-text-muted' : ''
+          }`}
+          title={file.path}
+        >
+          {label}
+        </span>
+        {commentCount > 0 && (
+          <span className="text-github-warning text-sm font-medium ml-auto flex items-center gap-1">
+            <MessageSquare size={14} />
+            {commentCount}
+          </span>
+        )}
+      </div>
+    );
   };
 
   const renderTreeNode = (node: TreeNode, depth: number = 0): React.ReactNode => {
@@ -430,52 +472,7 @@ export const FileList = memo(function FileList({
         </div>
       );
     } else if (node.file) {
-      const file = node.file;
-      const commentCount = commentCountMap.get(file.path) ?? 0;
-      const isReviewed = reviewedFiles.has(file.path);
-      const fileIndex = fileIndexMap.get(file.path) ?? -1;
-      const isSelected = selectedFileIndex !== null && selectedFileIndex === fileIndex;
-
-      return (
-        <div
-          key={`file:${file.path}`}
-          className={`flex items-center gap-2 px-4 py-2 hover:bg-github-bg-tertiary cursor-pointer transition-colors ${
-            isReviewed ? 'opacity-70' : ''
-          } ${isSelected ? 'bg-github-bg-tertiary' : ''}`}
-          data-file-row="true"
-          data-tree-row="true"
-          data-depth={depth}
-          style={{ paddingLeft: getTreeRowPaddingLeft(depth) }}
-          onClick={() => {
-            onScrollToFile(file.path);
-            onFileSelected?.();
-          }}
-        >
-          <Checkbox
-            checked={isReviewed}
-            onChange={() => {
-              onToggleReviewed(file.path);
-            }}
-            title={isReviewed ? 'Mark as not reviewed' : 'Mark as reviewed'}
-            className="z-10"
-          />
-          {getFileIcon(node.file.status)}
-          <span
-            className={`text-sm text-github-text-primary flex-1 overflow-hidden text-ellipsis whitespace-nowrap ${
-              isReviewed ? 'line-through text-github-text-muted' : ''
-            }`}
-            title={node.file.path}
-          >
-            {node.name}
-          </span>
-          {commentCount > 0 && (
-            <span className="text-github-warning text-sm font-medium ml-auto flex items-center gap-1">
-              <MessageSquare size={14} />
-              {commentCount}
-            </span>
-          )}
-        </div>
-      );
+      return renderFileRow(node.file, node.name, depth);
     }
 
     return null;
@@ -497,17 +494,19 @@ export const FileList = memo(function FileList({
               <span className="text-github-accent">+{diffTotals.additions}</span>
               <span className="text-github-danger">-{diffTotals.deletions}</span>
             </span>
-            <button
-              onClick={toggleAllDirectories}
-              className="p-1 hover:bg-github-bg-primary rounded transition-colors"
-              title={isAllExpanded ? 'Collapse all' : 'Expand all'}
-            >
-              {isAllExpanded ? (
-                <ChevronsDownUp size={16} className="text-github-text-secondary" />
-              ) : (
-                <ChevronsUpDown size={16} className="text-github-text-secondary" />
-              )}
-            </button>
+            {!flatFiles && (
+              <button
+                onClick={toggleAllDirectories}
+                className="p-1 hover:bg-github-bg-primary rounded transition-colors"
+                title={isAllExpanded ? 'Collapse all' : 'Expand all'}
+              >
+                {isAllExpanded ? (
+                  <ChevronsDownUp size={16} className="text-github-text-secondary" />
+                ) : (
+                  <ChevronsUpDown size={16} className="text-github-text-secondary" />
+                )}
+              </button>
+            )}
           </div>
         </div>
         <div className="space-y-2">
@@ -541,6 +540,34 @@ export const FileList = memo(function FileList({
               title="Filter files by text present in the diff"
             />
           </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              aria-pressed={hideViewed}
+              onClick={toggleHideViewed}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition-colors ${
+                hideViewed
+                  ? 'border-github-accent bg-github-accent/10 text-github-text-primary'
+                  : 'border-github-border text-github-text-secondary hover:bg-github-bg-primary'
+              }`}
+            >
+              <EyeOff size={14} />
+              Hide viewed
+            </button>
+            <button
+              type="button"
+              aria-pressed={flatFiles}
+              onClick={toggleFlatFiles}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition-colors ${
+                flatFiles
+                  ? 'border-github-accent bg-github-accent/10 text-github-text-primary'
+                  : 'border-github-border text-github-text-secondary hover:bg-github-bg-primary'
+              }`}
+            >
+              <ListTree size={14} />
+              Flat files
+            </button>
+          </div>
         </div>
       </div>
 
@@ -549,7 +576,9 @@ export const FileList = memo(function FileList({
         style={stickyContainerStyle}
         ref={scrollContainerRef}
       >
-        {filteredFileTree.children?.map((child) => renderTreeNode(child))}
+        {flatFiles
+          ? filteredFiles.map((file) => renderFileRow(file, file.path, 0))
+          : fileTree.children?.map((child) => renderTreeNode(child))}
       </div>
     </div>
   );
