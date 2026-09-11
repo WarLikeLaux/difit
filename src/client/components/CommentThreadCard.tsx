@@ -346,8 +346,8 @@ export function CommentThreadCard({
       onClick={onClick}
     >
       <div className={isCollapsed ? '' : 'mb-3'}>
-        <div className="flex flex-wrap items-start gap-2">
-          <div className="flex min-w-[12rem] flex-1 items-center gap-2 text-xs text-github-text-secondary">
+        <div>
+          <div className="flex min-w-0 w-full items-center gap-2 text-xs text-github-text-secondary">
             <button
               type="button"
               onClick={toggleCollapsed}
@@ -359,7 +359,8 @@ export function CommentThreadCard({
               {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
             </button>
             <span
-              className="font-mono px-1 py-0.5 rounded overflow-hidden text-ellipsis whitespace-nowrap"
+              className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded px-1 py-0.5 font-mono"
+              title={`${thread.file}:${lineLabel}`}
               style={{
                 backgroundColor: 'var(--color-yellow-path-bg)',
                 color: 'var(--color-yellow-path-text)',
@@ -421,117 +422,119 @@ export function CommentThreadCard({
               </button>
             )}
           </div>
-          {!isCollapsed && onThreadStatusChange && (
-            <div className="inline-flex overflow-hidden rounded border border-github-border">
-              {(['open', 'accepted', 'resolved'] as const).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  aria-pressed={threadStatus === status}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onThreadStatusChange(status);
-                  }}
-                  className={`border-r border-github-border px-2 py-1 text-xs capitalize transition-colors last:border-r-0 ${
-                    threadStatus === status
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
-                  }`}
-                >
-                  {status}
-                </button>
-              ))}
-            </div>
-          )}
           {!isCollapsed && (
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-              {onNavigateToCode && (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onNavigateToCode();
-                  }}
-                  className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
-                  title="Show this thread in the diff"
-                >
-                  <Navigation size={12} />
-                  Go to Code
-                </button>
-              )}
-              {reviewLineUrl && (
-                <a
-                  href={reviewLineUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
-                  title="Open this line in GitLab"
-                >
-                  <ExternalLink size={12} />
-                  Open Link
-                </a>
-              )}
-              <button
-                type="button"
-                onClick={handleCopyFile}
-                className="whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
-                title={`Copy ${thread.file}:${firstLine}`}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <FileCode2 size={12} />
-                  {isFileCopied ? 'Copied!' : 'Copy File'}
-                </span>
-              </button>
-              {thread.messages.length > 1 && (
-                <button
-                  type="button"
-                  aria-pressed={repliesHidden}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setRepliesHiddenOverride(!repliesHidden);
-                  }}
-                  className="whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-secondary transition-all hover:bg-github-bg-primary hover:text-github-text-primary"
-                >
-                  {repliesHidden ? 'Show replies' : 'Hide replies'}
-                </button>
-              )}
-              {onDeleteThread &&
-                (isDeleteConfirming ? (
-                  <div
-                    className="inline-flex items-center gap-1"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <span className="text-xs text-github-danger">Delete permanently?</span>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {onThreadStatusChange && (
+                <div className="inline-flex overflow-hidden rounded border border-github-border">
+                  {(['open', 'accepted', 'resolved'] as const).map((status) => (
                     <button
+                      key={status}
                       type="button"
-                      onClick={() => onDeleteThread()}
-                      className="rounded border border-github-danger px-2 py-1 text-xs text-github-danger hover:bg-github-danger/10"
+                      aria-pressed={threadStatus === status}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onThreadStatusChange(status);
+                      }}
+                      className={`border-r border-github-border px-2 py-1 text-xs capitalize transition-colors last:border-r-0 ${
+                        threadStatus === status
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
+                      }`}
                     >
-                      Delete
+                      {status}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsDeleteConfirming(false)}
-                      className="rounded border border-github-border px-2 py-1 text-xs text-github-text-secondary hover:bg-github-bg-primary"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
+                  ))}
+                </div>
+              )}
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                {onNavigateToCode && (
                   <button
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      setIsDeleteConfirming(true);
+                      onNavigateToCode();
                     }}
-                    className="rounded border border-github-border bg-github-bg-tertiary p-1.5 text-github-danger transition-all hover:bg-github-bg-primary"
-                    title="Delete thread"
-                    aria-label="Delete thread"
+                    className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+                    title="Show this thread in the diff"
                   >
-                    <Trash2 size={12} />
+                    <Navigation size={12} />
+                    Go to Code
                   </button>
-                ))}
+                )}
+                {reviewLineUrl && (
+                  <a
+                    href={reviewLineUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+                    title="Open this line in GitLab"
+                  >
+                    <ExternalLink size={12} />
+                    Open Link
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCopyFile}
+                  className="whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+                  title={`Copy ${thread.file}:${firstLine}`}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    <FileCode2 size={12} />
+                    {isFileCopied ? 'Copied!' : 'Copy File'}
+                  </span>
+                </button>
+                {thread.messages.length > 1 && (
+                  <button
+                    type="button"
+                    aria-pressed={repliesHidden}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setRepliesHiddenOverride(!repliesHidden);
+                    }}
+                    className="whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-secondary transition-all hover:bg-github-bg-primary hover:text-github-text-primary"
+                  >
+                    {repliesHidden ? 'Show replies' : 'Hide replies'}
+                  </button>
+                )}
+                {onDeleteThread &&
+                  (isDeleteConfirming ? (
+                    <div
+                      className="inline-flex items-center gap-1"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <span className="text-xs text-github-danger">Delete permanently?</span>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteThread()}
+                        className="rounded border border-github-danger px-2 py-1 text-xs text-github-danger hover:bg-github-danger/10"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsDeleteConfirming(false)}
+                        className="rounded border border-github-border px-2 py-1 text-xs text-github-text-secondary hover:bg-github-bg-primary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setIsDeleteConfirming(true);
+                      }}
+                      className="rounded border border-github-border bg-github-bg-tertiary p-1.5 text-github-danger transition-all hover:bg-github-bg-primary"
+                      title="Delete thread"
+                      aria-label="Delete thread"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  ))}
+              </div>
             </div>
           )}
         </div>
