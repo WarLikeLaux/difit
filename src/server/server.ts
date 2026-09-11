@@ -303,6 +303,7 @@ export async function startServer(
   const commentSessions = new Map<string, CommentSessionState>(
     Object.entries(await readCommentSessions(repositoryId)),
   );
+  const commentSessionEpoch = createId();
   let commentPersistenceQueue = Promise.resolve();
   const persistCommentSessions = (): Promise<void> => {
     const snapshot = new Map(
@@ -825,6 +826,12 @@ export async function startServer(
     return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
   }
 
+  function parseSessionEpoch(payload: unknown): string | undefined {
+    if (!payload || typeof payload !== 'object') return undefined;
+    const value = (payload as { sessionEpoch?: unknown }).sessionEpoch;
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+  }
+
   function parseCommentImportsPayload(body: unknown): CommentImport[] {
     if (typeof body === 'string') {
       return normalizeCommentImports(JSON.parse(body));
@@ -863,7 +870,19 @@ export async function startServer(
         typeof req.body === 'string' ? (JSON.parse(req.body) as unknown) : req.body;
       const nextThreads = parseCommentsPayload(body);
       const baseVersion = parseBaseVersion(body);
+      const sessionEpoch = parseSessionEpoch(body);
       const session = getOrCreateCommentSession(selection);
+
+      if (sessionEpoch !== commentSessionEpoch) {
+        res.status(409).json({
+          success: false,
+          staleClient: true,
+          sessionEpoch: commentSessionEpoch,
+          version: session.version,
+          threads: session.threads,
+        });
+        return;
+      }
 
       // Stale baseVersion means another writer (e.g. an agent) changed comments since the
       // client's last read, so merge rather than overwrite. A matching/absent version replaces.
@@ -877,6 +896,7 @@ export async function startServer(
       res.json({
         success: true,
         merged: isStale,
+        sessionEpoch: commentSessionEpoch,
         version: session.version,
         threads: session.threads,
       });
@@ -1059,6 +1079,7 @@ export async function startServer(
     const selection = getCommentSelectionFromQuery(req.query as Record<string, unknown>);
     const session = getOrCreateCommentSession(selection);
     res.json({
+      sessionEpoch: commentSessionEpoch,
       version: session.version,
       threads: session.threads,
     });

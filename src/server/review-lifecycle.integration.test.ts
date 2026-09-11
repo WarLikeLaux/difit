@@ -73,10 +73,14 @@ describe('branch review lifecycle', () => {
     reviewServer = first.server;
 
     const createdAt = new Date().toISOString();
+    const initialComments = (await (
+      await fetch(`http://localhost:${first.port}/api/comments-json`)
+    ).json()) as { sessionEpoch: string };
     const createResponse = await fetch(`http://localhost:${first.port}/api/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        sessionEpoch: initialComments.sessionEpoch,
         threads: [
           {
             id: 'thread-one',
@@ -276,5 +280,66 @@ describe('branch review lifecycle', () => {
       await fetch(`http://localhost:${started.port}/api/comments-json`)
     ).json()) as { threads: Array<{ id: string }> };
     expect(comments.threads).toEqual([]);
+  });
+
+  it('rejects comment state held by a browser from a previous server process', async () => {
+    const git = simpleGit(repositoryPath);
+    const base = (await git.raw(['rev-list', '--max-parents=0', 'HEAD'])).trim();
+    const first = await startServer({
+      selection: { baseCommitish: base, targetCommitish: '.', baseMode: 'merge-base' },
+      repoPath: repositoryPath,
+      preferredPort: 9340,
+      openBrowser: false,
+      keepAlive: true,
+      diffMode: DiffMode.DOT,
+    });
+    reviewServer = first.server;
+    const firstComments = (await (
+      await fetch(`http://localhost:${first.port}/api/comments-json`)
+    ).json()) as { sessionEpoch: string };
+    await closeServer(reviewServer);
+    reviewServer = undefined;
+
+    const second = await startServer({
+      selection: { baseCommitish: base, targetCommitish: '.', baseMode: 'merge-base' },
+      repoPath: repositoryPath,
+      preferredPort: 9340,
+      openBrowser: false,
+      keepAlive: true,
+      diffMode: DiffMode.DOT,
+    });
+    reviewServer = second.server;
+    const createdAt = new Date().toISOString();
+    const staleWrite = await fetch(`http://localhost:${second.port}/api/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionEpoch: firstComments.sessionEpoch,
+        threads: [
+          {
+            id: 'stale-thread',
+            filePath: 'example.txt',
+            position: { side: 'new', line: 2 },
+            createdAt,
+            updatedAt: createdAt,
+            messages: [
+              {
+                id: 'stale-message',
+                body: 'Comment cached by an old browser tab',
+                createdAt,
+                updatedAt: createdAt,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(staleWrite.status).toBe(409);
+    await expect(staleWrite.json()).resolves.toMatchObject({ staleClient: true, threads: [] });
+    const currentComments = (await (
+      await fetch(`http://localhost:${second.port}/api/comments-json`)
+    ).json()) as { threads: Array<{ id: string }> };
+    expect(currentComments.threads).toEqual([]);
   });
 });

@@ -52,6 +52,7 @@ import { useViewedFiles } from './hooks/useViewedFiles';
 import { useViewport } from './hooks/useViewport';
 import { fetchClientSettings, saveClientSettings } from './services/userSettings';
 import { hasMultipleCommentAuthors } from './utils/commentAuthors';
+import { getCommentStorageNamespace } from './utils/commentStorageNamespace';
 import { getReviewsDashboardUrl, resolveApiUrl } from './utils/apiUrl';
 import { createReviewTitle } from './utils/reviewTitle';
 import {
@@ -202,6 +203,10 @@ function App() {
   const { isMobile, isDesktop } = useViewport();
 
   // New diff-aware comment system
+  const commentStorageNamespace = getCommentStorageNamespace(
+    diffData?.repositoryId,
+    diffData?.reviewId,
+  );
   const {
     hasLoadedComments,
     threads,
@@ -221,7 +226,7 @@ function App() {
     resolvedSelection?.targetCommitish,
     diffData?.commit, // Using commit as currentCommitHash
     undefined, // branchToHash map - could be populated from server data
-    diffData?.repositoryId, // Repository identifier for storage isolation
+    commentStorageNamespace,
     resolvedSelection?.baseMode,
   );
   const threadsRef = useRef(threads);
@@ -233,8 +238,8 @@ function App() {
       return null;
     }
 
-    return `${diffData?.repositoryId ?? 'default'}:${resolvedSelectionKey}`;
-  }, [diffData?.repositoryId, resolvedSelectionKey]);
+    return `${commentStorageNamespace ?? 'default'}:${resolvedSelectionKey}`;
+  }, [commentStorageNamespace, resolvedSelectionKey]);
   const commentSessionQueryString = useMemo(() => {
     if (!resolvedSelection) {
       return null;
@@ -271,6 +276,7 @@ function App() {
   const skipNextCommentSyncRef = useRef(false);
   // Last server comment version seen; echoed back as baseVersion so the server can detect concurrent writes.
   const serverCommentVersionRef = useRef<number | null>(null);
+  const serverCommentSessionEpochRef = useRef<string | null>(null);
   const pendingBootstrapAfterLocalResetRef = useRef(false);
 
   useEffect(() => {
@@ -286,9 +292,13 @@ function App() {
     }
 
     const payload = (await response.json()) as {
+      sessionEpoch?: string;
       version?: number;
       threads?: DiffCommentThread[];
     };
+    if (typeof payload.sessionEpoch === 'string') {
+      serverCommentSessionEpochRef.current = payload.sessionEpoch;
+    }
     if (typeof payload.version === 'number') {
       serverCommentVersionRef.current = payload.version;
     }
@@ -303,19 +313,28 @@ function App() {
         body: JSON.stringify({
           threads: nextThreads,
           baseVersion: serverCommentVersionRef.current ?? undefined,
+          sessionEpoch: serverCommentSessionEpochRef.current ?? undefined,
         }),
       });
-      if (!response.ok) {
-        return;
-      }
-
       const result = (await response.json()) as {
+        sessionEpoch?: string;
         version?: number;
         merged?: boolean;
+        staleClient?: boolean;
         threads?: DiffCommentThread[];
       };
+      if (typeof result.sessionEpoch === 'string') {
+        serverCommentSessionEpochRef.current = result.sessionEpoch;
+      }
       if (typeof result.version === 'number') {
         serverCommentVersionRef.current = result.version;
+      }
+      if (!response.ok) {
+        if (result.staleClient && Array.isArray(result.threads)) {
+          skipNextCommentSyncRef.current = true;
+          replaceThreads(result.threads);
+        }
+        return;
       }
       // Server merged in a concurrent change; adopt it so we don't push a stale set back.
       if (result.merged && Array.isArray(result.threads)) {
@@ -1089,6 +1108,7 @@ function App() {
     const data = JSON.stringify({
       threads,
       baseVersion: serverCommentVersionRef.current ?? undefined,
+      sessionEpoch: serverCommentSessionEpochRef.current ?? undefined,
     });
     const commentsApiUrl = getCommentApiUrl('/api/comments');
 

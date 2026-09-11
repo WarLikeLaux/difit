@@ -34,6 +34,21 @@ async function getAvailablePort(preferredPort: number): Promise<number> {
   return port;
 }
 
+async function postComments(
+  port: number,
+  payload: Record<string, unknown>,
+  contentType = 'application/json',
+) {
+  const sessionResponse = await fetch(`http://localhost:${port}/api/comments-json`);
+  const session = (await sessionResponse.json()) as { sessionEpoch: string };
+
+  return fetch(`http://localhost:${port}/api/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType },
+    body: JSON.stringify({ ...payload, sessionEpoch: session.sessionEpoch }),
+  });
+}
+
 // Mock GitDiffParser
 vi.mock('./git-diff.js', () => {
   class GitDiffParserMock {
@@ -125,11 +140,7 @@ describe('Server Integration Tests', () => {
           },
         ];
 
-        const response = await fetch(`http://localhost:${result.port}/api/comments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ comments }),
-        });
+        const response = await postComments(result.port, { comments });
 
         expect(response.status).toBe(200);
         const apiResult = (await response.json()) as {
@@ -176,10 +187,8 @@ describe('Server Integration Tests', () => {
           },
         ];
 
-        const response = await fetch(`http://localhost:${result.port}/api/comments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ comments: commentsWithMissingFile }),
+        const response = await postComments(result.port, {
+          comments: commentsWithMissingFile,
         });
 
         expect(response.status).toBe(200);
@@ -210,11 +219,7 @@ describe('Server Integration Tests', () => {
     });
 
     const postThreads = (port: number, threads: unknown[], baseVersion?: number) =>
-      fetch(`http://localhost:${port}/api/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threads, baseVersion }),
-      });
+      postComments(port, { threads, baseVersion });
 
     const getSession = async (port: number) => {
       const res = await fetch(`http://localhost:${port}/api/comments-json`);
@@ -750,11 +755,7 @@ describe('Server Integration Tests', () => {
     it('POST /api/comments accepts comment data', async () => {
       const comments = [{ file: 'test.js', line: 10, body: 'This is a test comment' }];
 
-      const response = await fetch(`http://localhost:${port}/api/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comments }),
-      });
+      const response = await postComments(port, { comments });
 
       const data = await response.json();
       expect(response.ok).toBe(true);
@@ -767,11 +768,7 @@ describe('Server Integration Tests', () => {
         { file: 'test.js', line: [20, 30], body: 'Multi-line comment' },
       ];
 
-      const response = await fetch(`http://localhost:${port}/api/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comments }),
-      });
+      const response = await postComments(port, { comments });
 
       const data = await response.json();
       expect(response.ok).toBe(true);
@@ -781,11 +778,7 @@ describe('Server Integration Tests', () => {
     it('POST /api/comments handles text/plain content type', async () => {
       const comments = [{ file: 'test.js', line: 10, body: 'This is a test comment' }];
 
-      const response = await fetch(`http://localhost:${port}/api/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ comments }),
-      });
+      const response = await postComments(port, { comments }, 'text/plain');
 
       const data = await response.json();
       expect(response.ok).toBe(true);
@@ -799,11 +792,7 @@ describe('Server Integration Tests', () => {
         { file: 'test.js', line: 20, side: 'new', body: 'Second comment' },
       ];
 
-      await fetch(`http://localhost:${port}/api/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comments }),
-      });
+      await postComments(port, { comments });
 
       // Then get the output
       const response = await fetch(`http://localhost:${port}/api/comments-output`);
@@ -826,11 +815,7 @@ describe('Server Integration Tests', () => {
         { file: 'test.js', line: [15, 25], body: 'Multi-line comment' },
       ];
 
-      await fetch(`http://localhost:${port}/api/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comments }),
-      });
+      await postComments(port, { comments });
 
       // Then get the output
       const response = await fetch(`http://localhost:${port}/api/comments-output`);
@@ -911,11 +896,7 @@ describe('Server Integration Tests', () => {
     it('GET /api/comments-json returns threads after posting comments', async () => {
       const comments = [{ file: 'test.js', line: 10, body: 'JSON test comment' }];
 
-      await fetch(`http://localhost:${port}/api/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comments }),
-      });
+      await postComments(port, { comments });
 
       const response = await fetch(`http://localhost:${port}/api/comments-json`);
 
