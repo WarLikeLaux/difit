@@ -12,7 +12,15 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
 } from 'lucide-react';
-import { memo, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import {
+  memo,
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from 'react';
 
 import { type DiffFile, type CommentThread } from '../../types/diff';
 import { isSafariBrowser } from '../utils/browser';
@@ -179,6 +187,8 @@ export const FileList = memo(function FileList({
     () => new Set(getAllDirectoryPaths(fileTree)),
   );
   const [filterText, setFilterText] = useState('');
+  const [codeFilterText, setCodeFilterText] = useState('');
+  const deferredCodeFilterText = useDeferredValue(codeFilterText);
 
   const commentCountMap = useMemo(() => {
     const counts = new Map<string, number>();
@@ -213,10 +223,24 @@ export const FileList = memo(function FileList({
 
   // Filter the file tree based on search text
   const filteredFileTree = useMemo(() => {
-    const normalizedFilter = filterText.trim().toLowerCase();
+    const normalizedFileFilter = filterText.trim().toLowerCase();
+    const normalizedCodeFilter = deferredCodeFilterText.trim().toLowerCase();
+    const codeMatchingFilePaths = new Set(
+      normalizedCodeFilter
+        ? files
+            .filter((file) =>
+              file.chunks.some((chunk) =>
+                chunk.lines.some((line) =>
+                  line.content.toLowerCase().includes(normalizedCodeFilter),
+                ),
+              ),
+            )
+            .map((file) => file.path)
+        : files.map((file) => file.path),
+    );
 
     const filterTreeNode = (node: TreeNode): TreeNode | null => {
-      if (!normalizedFilter) return node;
+      if (!normalizedFileFilter && !normalizedCodeFilter) return node;
 
       if (node.isDirectory && node.children) {
         const filteredChildren = node.children
@@ -228,8 +252,9 @@ export const FileList = memo(function FileList({
         }
         return null;
       } else if (node.file) {
-        // Check if file name matches filter
-        if (node.file.path.toLowerCase().includes(normalizedFilter)) {
+        const matchesFile =
+          !normalizedFileFilter || node.file.path.toLowerCase().includes(normalizedFileFilter);
+        if (matchesFile && codeMatchingFilePaths.has(node.file.path)) {
           return node;
         }
         return null;
@@ -244,7 +269,7 @@ export const FileList = memo(function FileList({
         children: [],
       }
     );
-  }, [fileTree, filterText]);
+  }, [deferredCodeFilterText, fileTree, files, filterText]);
 
   const getFileIcon = (status: DiffFile['status']) => {
     switch (status) {
@@ -476,18 +501,34 @@ export const FileList = memo(function FileList({
             </button>
           </div>
         </div>
-        <div className="relative">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 transform -translate-y-1/2 text-github-text-muted"
-          />
-          <input
-            type="text"
-            placeholder="Filter files..."
-            value={filterText}
-            onChange={(e) => setFilterText(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm bg-github-bg-primary border border-github-border rounded-md focus:outline-none focus:border-github-accent text-github-text-primary placeholder-github-text-muted"
-          />
+        <div className="space-y-2">
+          <div className="relative">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-github-text-muted"
+            />
+            <input
+              type="text"
+              placeholder="Filter files..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm bg-github-bg-primary border border-github-border rounded-md focus:outline-none focus:border-github-accent text-github-text-primary placeholder-github-text-muted"
+            />
+          </div>
+          <div className="relative">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-github-text-muted"
+            />
+            <input
+              type="text"
+              placeholder="Filter code..."
+              value={codeFilterText}
+              onChange={(e) => setCodeFilterText(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm bg-github-bg-primary border border-github-border rounded-md focus:outline-none focus:border-github-accent text-github-text-primary placeholder-github-text-muted"
+              title="Filter files by text present in the diff"
+            />
+          </div>
         </div>
       </div>
 

@@ -28,6 +28,50 @@ function getLabel(title: string): HTMLElement {
 }
 
 describe('FileList', () => {
+  it('filters files by text from all diff lines', () => {
+    const matchingFile = createFile('src/matching.ts');
+    matchingFile.chunks = [
+      {
+        header: '@@ -1 +1 @@',
+        oldStart: 1,
+        oldLines: 1,
+        newStart: 1,
+        newLines: 1,
+        lines: [{ type: 'add', content: 'const uniqueNeedle = true;', newLineNumber: 1 }],
+      },
+    ];
+    const otherFile = createFile('src/other.ts');
+    otherFile.chunks = [
+      {
+        header: '@@ -1 +1 @@',
+        oldStart: 1,
+        oldLines: 1,
+        newStart: 1,
+        newLines: 1,
+        lines: [{ type: 'add', content: 'const unrelated = true;', newLineNumber: 1 }],
+      },
+    ];
+
+    render(
+      <FileList
+        files={[matchingFile, otherFile]}
+        onScrollToFile={vi.fn()}
+        comments={[]}
+        reviewedFiles={new Set()}
+        onToggleReviewed={vi.fn()}
+        onToggleFolderReviewed={vi.fn()}
+        selectedFileIndex={null}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('Filter code...'), {
+      target: { value: 'UNIQUENEEDLE' },
+    });
+
+    expect(screen.getByTitle('src/matching.ts')).toBeInTheDocument();
+    expect(screen.queryByTitle('src/other.ts')).not.toBeInTheDocument();
+  });
+
   it('renders total additions and deletions beside the file count', () => {
     render(
       <FileList
