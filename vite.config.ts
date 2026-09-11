@@ -6,6 +6,7 @@ import { resolve } from 'path';
 const apiTarget = process.env.VITE_DIFIT_API_URL || 'http://localhost:4966';
 
 export default defineConfig({
+  base: './',
   plugins: [
     react(),
     {

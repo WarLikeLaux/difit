@@ -9,7 +9,7 @@ export interface StoredCommentSession {
   version: number;
 }
 
-type StoredCommentSessions = Record<string, StoredCommentSession>;
+export type StoredCommentSessions = Record<string, StoredCommentSession>;
 
 const STORE_VERSION = 1 as const;
 

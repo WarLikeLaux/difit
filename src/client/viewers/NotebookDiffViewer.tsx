@@ -7,6 +7,7 @@ import type { DiffLine } from '../../types/diff';
 import { EnhancedPrismSyntaxHighlighter } from '../components/EnhancedPrismSyntaxHighlighter';
 import { PrismSyntaxHighlighter } from '../components/PrismSyntaxHighlighter';
 import type { MergedChunk } from '../hooks/useExpandedLines';
+import { resolveApiUrl } from '../utils/apiUrl';
 import { extractMarkdownText, isElementWithCodeProps, isSafeUrl } from '../utils/markdownUtils';
 
 import { PreviewModeTabs, type PreviewMode } from './PreviewModeTabs';
@@ -483,7 +484,9 @@ const isFetchableRef = (ref?: string) => Boolean(ref && ref !== 'stdin');
 
 const fetchNotebookContent = async (filePath: string, ref: string): Promise<string | null> => {
   const encodedPath = encodeURIComponent(filePath);
-  const response = await fetch(`/api/blob/${encodedPath}?ref=${encodeURIComponent(ref)}`);
+  const response = await fetch(
+    resolveApiUrl(`/api/blob/${encodedPath}?ref=${encodeURIComponent(ref)}`),
+  );
   if (!response.ok) return null;
   return response.text();
 };

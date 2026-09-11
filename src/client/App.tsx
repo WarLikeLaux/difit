@@ -7,6 +7,7 @@ import {
   Keyboard,
   List,
   ExternalLink,
+  ArrowLeft,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 
@@ -51,6 +52,7 @@ import { useViewedFiles } from './hooks/useViewedFiles';
 import { useViewport } from './hooks/useViewport';
 import { fetchClientSettings, saveClientSettings } from './services/userSettings';
 import { hasMultipleCommentAuthors } from './utils/commentAuthors';
+import { getReviewsDashboardUrl, resolveApiUrl } from './utils/apiUrl';
 import {
   findNewExternalMessages,
   showExternalMessageNotification,
@@ -250,9 +252,9 @@ function App() {
   const getCommentApiUrl = useCallback(
     (path: string) => {
       if (!commentSessionQueryString) {
-        return path;
+        return resolveApiUrl(path);
       }
-      return `${path}?${commentSessionQueryString}`;
+      return resolveApiUrl(`${path}?${commentSessionQueryString}`);
     },
     [commentSessionQueryString],
   );
@@ -776,7 +778,7 @@ function App() {
         if (requestedSelection?.baseMode === 'merge-base')
           params.set('baseMode', requestedSelection.baseMode);
 
-        const response = await fetch(`/api/diff?${params}`, {
+        const response = await fetch(resolveApiUrl(`/api/diff?${params}`), {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error('Failed to fetch diff data');
@@ -923,7 +925,7 @@ function App() {
 
   // Fetch revision options on mount
   useEffect(() => {
-    fetch('/api/revisions')
+    fetch(resolveApiUrl('/api/revisions'))
       .then((res) => (res.ok ? res.json() : null))
       .then((data: RevisionsResponse | null) => {
         setRevisionOptions(data);
@@ -1195,7 +1197,7 @@ function App() {
   const handleOpenInEditor = useCallback(
     async (filePath: string, lineNumber: number) => {
       try {
-        const response = await fetch('/api/open-in-editor', {
+        const response = await fetch(resolveApiUrl('/api/open-in-editor'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1283,6 +1285,7 @@ function App() {
     settings.editor.id !== 'none' &&
     settings.editor.command.trim() !== '' &&
     settings.editor.argsTemplate.trim() !== '';
+  const reviewsDashboardUrl = getReviewsDashboardUrl();
 
   return (
     <WordHighlightProvider>
@@ -1311,6 +1314,16 @@ function App() {
               />
             </h1>
             <div className="flex items-center gap-1">
+              {reviewsDashboardUrl && (
+                <a
+                  href={reviewsDashboardUrl}
+                  className="p-2 text-github-text-secondary hover:text-github-text-primary hover:bg-github-bg-tertiary rounded transition-colors"
+                  title="Back to reviews"
+                  aria-label="Back to reviews"
+                >
+                  <ArrowLeft size={18} />
+                </a>
+              )}
               <button
                 onClick={() => setIsFileTreeOpen(!isFileTreeOpen)}
                 className="p-2 text-github-text-secondary hover:text-github-text-primary hover:bg-github-bg-tertiary rounded transition-colors"
@@ -1479,6 +1492,19 @@ function App() {
             </div>
           </div>
         </header>
+        {diffData.reviewStale && (
+          <div
+            role="alert"
+            className="border-b border-github-danger bg-red-950/40 px-4 py-3 text-sm text-github-danger"
+          >
+            This checkout changed from{' '}
+            <code className="font-mono text-github-text-primary">{diffData.reviewBranch}</code> to{' '}
+            <code className="font-mono text-github-text-primary">
+              {diffData.currentBranch ?? 'detached HEAD'}
+            </code>
+            . This review is read-only. Open Difit for the current branch to keep comments isolated.
+          </div>
+        )}
         {revisionOptions && (
           <RevisionDetailModal
             key={isRevisionModalOpen ? getDiffSelectionKey(selectedRevision) : 'closed'}

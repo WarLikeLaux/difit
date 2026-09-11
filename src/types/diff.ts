@@ -60,6 +60,10 @@ export interface DiffResponse {
   clearComments?: boolean;
   repositoryId?: string;
   reviewUrl?: string;
+  reviewId?: string;
+  reviewBranch?: string;
+  reviewStale?: boolean;
+  currentBranch?: string;
   commentImports?: CommentImport[];
   commentImportId?: string;
 }

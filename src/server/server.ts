@@ -29,6 +29,12 @@ import { createId } from '../utils/createId.js';
 import { FileWatcherService } from './file-watcher.js';
 import { GitDiffParser } from './git-diff.js';
 import { readCommentSessions, writeCommentSessions } from './comment-storage.js';
+import {
+  createReviewContext,
+  getReviewBranchState,
+  type ReviewBranchState,
+} from './review-context.js';
+import { registerReview } from './review-registry.js';
 import { parseUserSettingsPatch, readUserConfig, updateUserClientSettings } from './user-config.js';
 
 import {
@@ -120,10 +126,6 @@ function createResolvedCommentSelection(
   return createDiffSelection(baseCommitish, targetCommitish, baseMode);
 }
 
-function createCommentSessionKey(selection: DiffSelection): string {
-  return getDiffSelectionKey(selection);
-}
-
 export async function startServer(
   options: ServerOptions,
 ): Promise<{ port: number; url: string; isEmpty?: boolean; server?: Server }> {
@@ -131,7 +133,24 @@ export async function startServer(
   const repositoryPath = resolve(options.repoPath ?? process.cwd());
   const repositoryId = createHash('sha256').update(repositoryPath).digest('hex');
   const initialCommentImports = options.commentImports || [];
-  const initialSelection = options.selection ?? createDiffSelection('', '');
+  const requestedInitialSelection = options.selection ?? createDiffSelection('', '');
+  const reviewContext =
+    options.stdinDiff || !options.selection
+      ? undefined
+      : await createReviewContext({
+          repositoryPath,
+          repositoryId,
+          selection: requestedInitialSelection,
+          reviewUrl: options.reviewUrl,
+        });
+  const initialSelection =
+    reviewContext?.followsBranch && options.reviewUrl
+      ? createDiffSelection(
+          requestedInitialSelection.baseCommitish,
+          '.',
+          requestedInitialSelection.baseMode,
+        )
+      : requestedInitialSelection;
   const commentImportId =
     initialCommentImports.length > 0
       ? createHash('sha256').update(serializeCommentImports(initialCommentImports)).digest('hex')
@@ -160,6 +179,34 @@ export async function startServer(
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     next();
+  });
+
+  const readBranchState = async (): Promise<ReviewBranchState> =>
+    reviewContext ? getReviewBranchState(reviewContext) : { stale: false };
+
+  app.use(async (req, res, next) => {
+    const mutatesComments =
+      req.method !== 'GET' &&
+      (req.path === '/api/comments' ||
+        req.path === '/api/comment-imports' ||
+        req.path.startsWith('/api/comments/'));
+    if (!mutatesComments || !reviewContext?.followsBranch) {
+      next();
+      return;
+    }
+
+    const branchState = await readBranchState();
+    if (!branchState.stale) {
+      next();
+      return;
+    }
+
+    res.status(409).json({
+      error: 'Review checkout changed branch; this review is read-only',
+      code: 'REVIEW_BRANCH_CHANGED',
+      expectedBranch: reviewContext.branch,
+      currentBranch: branchState.currentBranch,
+    });
   });
 
   // Skip validation if using stdin diff
@@ -202,6 +249,8 @@ export async function startServer(
     initialSelection,
     Boolean(options.stdinDiff),
   );
+  const createCommentSessionKey = (selection: DiffSelection): string =>
+    reviewContext?.followsBranch ? reviewContext.sessionKey : getDiffSelectionKey(selection);
 
   function parseRepositoryRelativePath(filepath: unknown):
     | { ok: true; path: string }
@@ -266,6 +315,15 @@ export async function startServer(
     commentPersistenceQueue = persistence;
     return persistence;
   };
+  if (reviewContext?.followsBranch && !commentSessions.has(reviewContext.sessionKey)) {
+    const legacySession = reviewContext.legacySessionKeys
+      .map((key) => commentSessions.get(key))
+      .find((session) => session !== undefined);
+    if (legacySession) {
+      commentSessions.set(reviewContext.sessionKey, structuredClone(legacySession));
+      await persistCommentSessions();
+    }
+  }
   const initialCommentThreads = mergeCommentImports([], initialCommentImports).threads;
   if (initialCommentThreads.length > 0) {
     const key = createCommentSessionKey(currentCommentSelection);
@@ -312,7 +370,31 @@ export async function startServer(
     return nextSession;
   }
 
+  app.get('/api/review-context', async (_req, res) => {
+    if (!reviewContext) {
+      res.status(404).json({ error: 'Review context is not available' });
+      return;
+    }
+
+    const branchState = await readBranchState();
+    res.json({
+      id: reviewContext.id,
+      repositoryId: reviewContext.repositoryId,
+      repositoryPath: reviewContext.repositoryPath,
+      sessionKey: reviewContext.sessionKey,
+      branch: reviewContext.branch,
+      baseRef: reviewContext.baseRef,
+      targetRef: reviewContext.targetRef,
+      reviewUrl: reviewContext.reviewUrl,
+      followsBranch: reviewContext.followsBranch,
+      stale: branchState.stale,
+      currentBranch: branchState.currentBranch,
+      currentHead: branchState.currentHead,
+    });
+  });
+
   app.get('/api/diff', async (req, res) => {
+    const branchState = await readBranchState();
     const ignoreWhitespace = req.query.ignoreWhitespace === 'true';
     const hasBase = typeof req.query.base === 'string';
     const hasTarget = typeof req.query.target === 'string';
@@ -331,7 +413,7 @@ export async function startServer(
       (Boolean(options.stdinDiff) || diffSelectionsEqual(requestedSelection, initialSelection));
 
     let responseDiffData = initialDiffData;
-    if (!options.stdinDiff) {
+    if (!options.stdinDiff && !branchState.stale) {
       const cacheKey = createDiffCacheKey(requestedSelection, ignoreWhitespace);
       const cached = getCachedDiffResponse(diffDataCache, cacheKey);
       if (cached) {
@@ -389,6 +471,10 @@ export async function startServer(
       reviewUrl: options.reviewUrl,
       commentImports: shouldIncludeCommentImports ? initialCommentImports : undefined,
       commentImportId: shouldIncludeCommentImports ? commentImportId : undefined,
+      reviewId: reviewContext?.id,
+      reviewBranch: reviewContext?.branch,
+      reviewStale: branchState.stale,
+      currentBranch: branchState.currentBranch,
     });
   });
 
@@ -1215,6 +1301,10 @@ export async function startServer(
     options.preferredPort || 4966,
     options.host || 'localhost',
   );
+
+  if (reviewContext) {
+    await registerReview(reviewContext, port);
+  }
 
   // Security warning for non-localhost binding
   if (options.host && options.host !== '127.0.0.1' && options.host !== 'localhost') {

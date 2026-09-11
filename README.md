@@ -206,6 +206,23 @@ src/components/Button.tsx:L42-L48   # This line is automatically added
 This section is unnecessary
 ```
 
+### Review dashboard
+
+Each Git checkout and branch has an isolated review context. New commits on the same branch keep
+the existing threads, while switching the checkout to another branch makes the old viewer
+read-only so comments cannot be written into the wrong review.
+
+Run the local dashboard to see registered reviews and their active threads:
+
+```sh
+difit hub --host 127.0.0.1 --port 4965
+```
+
+The dashboard keeps stopped reviews visible from their persisted metadata. Running viewers open
+under the same origin at `/reviews/<review-id>/`, with a back button to the review list; their
+internal localhost ports are not exposed in the UI. Checkout-specific metadata stays in the local
+Difit config directory.
+
 ## 🤖 Calling from Agents
 
 You can install the following Skills to work with difit from AI agents.

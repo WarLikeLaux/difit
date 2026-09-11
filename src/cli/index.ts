@@ -20,6 +20,7 @@ import {
   readStdin,
 } from './utils.js';
 import { createCommentCommand } from './comment.js';
+import { createHubCommand } from './hub.js';
 import { getPrPatch, getPrCommentImports } from './github.js';
 import { detectGitLabMergeRequestUrl, normalizeGitLabMergeRequestUrl } from './gitlab.js';
 import {
@@ -102,6 +103,7 @@ program
   .version(pkg.version, '-v, --version', 'output the version number')
   .enablePositionalOptions()
   .addCommand(createCommentCommand())
+  .addCommand(createHubCommand())
   .argument(
     '[commit-ish]',
     'Git commit, tag, branch, HEAD~n reference, or "working"/"staged"/"."',

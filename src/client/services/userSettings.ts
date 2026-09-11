@@ -1,3 +1,5 @@
+import { resolveApiUrl } from '../utils/apiUrl';
+
 // Client access to the server-persisted user settings (~/.difit/config.json).
 // localStorage stays as the synchronous cache and as the only store when no
 // API server is available (e.g. the static demo site).
@@ -11,7 +13,7 @@ let cachedSettings: Promise<Record<string, unknown> | null> | null = null;
 export function fetchClientSettings(): Promise<Record<string, unknown> | null> {
   cachedSettings ??= (async () => {
     try {
-      const response = await fetch('/api/user-settings');
+      const response = await fetch(resolveApiUrl('/api/user-settings'));
       if (!response?.ok) {
         return null;
       }
@@ -44,7 +46,7 @@ export function saveClientSettings(patch: Record<string, unknown>): void {
     flushTimer = null;
     void (async () => {
       try {
-        await fetch('/api/user-settings', {
+        await fetch(resolveApiUrl('/api/user-settings'), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ client }),
