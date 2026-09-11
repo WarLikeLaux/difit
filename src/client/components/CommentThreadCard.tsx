@@ -359,7 +359,7 @@ export function CommentThreadCard({
               {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
             </button>
             <span
-              className="-mr-3 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-l px-1 py-0.5 pr-3 font-mono"
+              className="min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded px-1 py-0.5 font-mono"
               title={`${thread.file}:${lineLabel}`}
               style={{
                 backgroundColor: 'var(--color-yellow-path-bg)',
