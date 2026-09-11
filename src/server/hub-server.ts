@@ -50,6 +50,16 @@ interface HubServerOptions {
   terminateProcess?: (pid: number) => void;
 }
 
+function normalizeExternalReviewUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function getThreadStatus(thread: DiffCommentThread): HubReviewThread['status'] {
   if (thread.resolvedAt) return 'resolved';
   if (thread.readyAt) return 'ready';
@@ -83,7 +93,7 @@ function toReviewContext(registration: ReviewRegistration): ReviewContext {
     baseRef: registration.baseRef,
     targetRef: registration.targetRef,
     baseMode: registration.baseMode === 'merge-base' ? 'merge-base' : 'direct',
-    reviewUrl: registration.reviewUrl,
+    reviewUrl: normalizeExternalReviewUrl(registration.reviewUrl),
     followsBranch: registration.followsBranch,
     initialHead: registration.initialHead,
     legacySessionKeys: [],
@@ -138,7 +148,7 @@ export async function getHubReviews(): Promise<HubReview[]> {
         repositoryPath: registration.repositoryPath,
         branch: registration.branch,
         baseRef: registration.baseRef,
-        reviewUrl: registration.reviewUrl,
+        reviewUrl: normalizeExternalReviewUrl(registration.reviewUrl),
         port: registration.port,
         followsBranch: registration.followsBranch,
         running,
