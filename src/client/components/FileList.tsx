@@ -36,6 +36,8 @@ interface FileListProps {
   onToggleReviewed: (path: string) => void;
   onToggleFolderReviewed: (path: string, reviewed: boolean) => void;
   selectedFileIndex: number | null;
+  codeFilterText?: string;
+  onCodeFilterTextChange?: (value: string) => void;
 }
 
 interface TreeNode {
@@ -50,6 +52,16 @@ const TREE_ROW_PADDING_LEFT_PX = 16;
 const TREE_ICON_SIZE_PX = 16;
 const TREE_ROW_GAP_PX = 8;
 const TREE_INDENT_STEP_PX = TREE_ICON_SIZE_PX + TREE_ROW_GAP_PX;
+
+export function fileMatchesCodeFilter(file: DiffFile, filterText: string): boolean {
+  const normalizedFilter = filterText.trim().toLowerCase();
+  return (
+    !normalizedFilter ||
+    file.chunks.some((chunk) =>
+      chunk.lines.some((line) => line.content.toLowerCase().includes(normalizedFilter)),
+    )
+  );
+}
 
 function getTreeRowPaddingLeft(depth: number): string {
   return `${depth * TREE_INDENT_STEP_PX + TREE_ROW_PADDING_LEFT_PX}px`;
@@ -170,6 +182,8 @@ export const FileList = memo(function FileList({
   onToggleReviewed,
   onToggleFolderReviewed,
   selectedFileIndex,
+  codeFilterText: controlledCodeFilterText,
+  onCodeFilterTextChange,
 }: FileListProps) {
   const fileTree = useMemo(() => buildFileTree(files), [files]);
   const shouldUseStickyDirectoryHeaders = useMemo(
@@ -187,7 +201,8 @@ export const FileList = memo(function FileList({
     () => new Set(getAllDirectoryPaths(fileTree)),
   );
   const [filterText, setFilterText] = useState('');
-  const [codeFilterText, setCodeFilterText] = useState('');
+  const [localCodeFilterText, setLocalCodeFilterText] = useState('');
+  const codeFilterText = controlledCodeFilterText ?? localCodeFilterText;
   const deferredCodeFilterText = useDeferredValue(codeFilterText);
 
   const commentCountMap = useMemo(() => {
@@ -228,13 +243,7 @@ export const FileList = memo(function FileList({
     const codeMatchingFilePaths = new Set(
       normalizedCodeFilter
         ? files
-            .filter((file) =>
-              file.chunks.some((chunk) =>
-                chunk.lines.some((line) =>
-                  line.content.toLowerCase().includes(normalizedCodeFilter),
-                ),
-              ),
-            )
+            .filter((file) => fileMatchesCodeFilter(file, normalizedCodeFilter))
             .map((file) => file.path)
         : files.map((file) => file.path),
     );
@@ -524,7 +533,10 @@ export const FileList = memo(function FileList({
               type="text"
               placeholder="Filter code..."
               value={codeFilterText}
-              onChange={(e) => setCodeFilterText(e.target.value)}
+              onChange={(e) => {
+                setLocalCodeFilterText(e.target.value);
+                onCodeFilterTextChange?.(e.target.value);
+              }}
               className="w-full pl-9 pr-3 py-2 text-sm bg-github-bg-primary border border-github-border rounded-md focus:outline-none focus:border-github-accent text-github-text-primary placeholder-github-text-muted"
               title="Filter files by text present in the diff"
             />

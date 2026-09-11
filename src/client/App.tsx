@@ -8,7 +8,7 @@ import {
   List,
   ExternalLink,
 } from 'lucide-react';
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 
 import {
   type DiffCommentThread,
@@ -32,7 +32,7 @@ import {
 import { CommentsView } from './components/CommentsView';
 import { DiffQuickMenu } from './components/DiffQuickMenu';
 import { DiffViewer } from './components/DiffViewer';
-import { FileList } from './components/FileList';
+import { FileList, fileMatchesCodeFilter } from './components/FileList';
 import { GitHubIcon } from './components/GitHubIcon';
 import { HelpModal } from './components/HelpModal';
 import { Logo } from './components/Logo';
@@ -155,6 +155,8 @@ function App() {
   const [mainView, setMainView] = useState<MainView | null>(null);
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
+  const [codeFilterText, setCodeFilterText] = useState('');
+  const deferredCodeFilterText = useDeferredValue(codeFilterText);
   const collapsedInitializedRef = useRef(false);
   const diffScrollContainerRef = useRef<HTMLElement | null>(null);
 
@@ -363,6 +365,39 @@ function App() {
     diffScrollContainerRef,
     setDiffData,
   });
+
+  const visibleDiffFiles = useMemo(
+    () =>
+      (diffData?.files ?? [])
+        .map((file, fileIndex) => ({ file, fileIndex }))
+        .filter(({ file }) => fileMatchesCodeFilter(file, deferredCodeFilterText)),
+    [deferredCodeFilterText, diffData?.files],
+  );
+
+  const scrollVisibleFileIntoDiffContainer = useCallback(
+    (filePath: string) => {
+      if (!deferredCodeFilterText.trim()) {
+        scrollFileIntoDiffContainer(filePath);
+        return;
+      }
+
+      ensureFileRendered(filePath);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const scrollContainer = diffScrollContainerRef.current;
+          const target = document.getElementById(getFileElementId(filePath));
+          if (!scrollContainer || !target) return;
+
+          const containerRect = scrollContainer.getBoundingClientRect();
+          const targetRect = target.getBoundingClientRect();
+          scrollContainer.scrollTo({
+            top: Math.max(0, scrollContainer.scrollTop + targetRect.top - containerRect.top),
+          });
+        });
+      });
+    },
+    [deferredCodeFilterText, ensureFileRendered, scrollFileIntoDiffContainer],
+  );
 
   const toggleFileReviewed = useCallback(
     async (filePath: string) => {
@@ -1508,13 +1543,15 @@ function App() {
               <div className="flex-1 overflow-y-auto">
                 <FileList
                   files={diffData.files}
-                  onScrollToFile={scrollFileIntoDiffContainer}
+                  onScrollToFile={scrollVisibleFileIntoDiffContainer}
                   onFileSelected={isMobile ? handleMobileFileSelected : undefined}
                   comments={normalizedThreads}
                   reviewedFiles={viewedFiles}
                   onToggleReviewed={toggleFileReviewed}
                   onToggleFolderReviewed={toggleFolderReviewed}
                   selectedFileIndex={cursor?.fileIndex ?? null}
+                  codeFilterText={codeFilterText}
+                  onCodeFilterTextChange={setCodeFilterText}
                 />
               </div>
               {!isMobile && (
@@ -1557,7 +1594,7 @@ function App() {
             ref={diffScrollContainerRef}
             className={`flex-1 overflow-y-auto ${showMobileCommentsBar ? 'pb-16' : ''}`}
           >
-            {diffData.files.map((file, fileIndex) => {
+            {visibleDiffFiles.map(({ file, fileIndex }) => {
               const fileThreads = threadsByFile.get(file.path) ?? EMPTY_COMMENT_THREADS;
               const mergedChunks =
                 getMergedChunksForVersion(mergedChunksState, diffDataVersion, file.path) ??

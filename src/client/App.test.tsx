@@ -1059,3 +1059,59 @@ describe('App Component - Mobile sidebar auto-close', () => {
     });
   });
 });
+
+describe('App Component - Code filter', () => {
+  it('hides non-matching diff cards as well as file tree entries', async () => {
+    mockFetch({
+      ...mockDiffResponse,
+      files: [
+        {
+          path: 'matching.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+          chunks: [
+            {
+              header: '@@ -1 +1 @@',
+              oldStart: 1,
+              oldLines: 0,
+              newStart: 1,
+              newLines: 1,
+              lines: [{ type: 'add', content: 'const uniqueNeedle = true;', newLineNumber: 1 }],
+            },
+          ],
+        },
+        {
+          path: 'other.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+          chunks: [
+            {
+              header: '@@ -1 +1 @@',
+              oldStart: 1,
+              oldLines: 0,
+              newStart: 1,
+              newLines: 1,
+              lines: [{ type: 'add', content: 'const unrelated = true;', newLineNumber: 1 }],
+            },
+          ],
+        },
+      ],
+    });
+
+    const { container } = renderApp();
+    await screen.findByTitle('matching.ts');
+    expect(container.querySelector('[data-file-path="other.ts"]')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Filter code...'), {
+      target: { value: 'UNIQUENEEDLE' },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTitle('other.ts')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-file-path="matching.ts"]')).toBeInTheDocument();
+      expect(container.querySelector('[data-file-path="other.ts"]')).not.toBeInTheDocument();
+    });
+  });
+});
