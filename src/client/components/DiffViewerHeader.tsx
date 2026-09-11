@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  FileCode2,
   FileDiff,
   FilePen,
   FilePlus,
@@ -26,6 +27,7 @@ interface DiffViewerHeaderProps {
   onToggleCollapsed: (path: string) => void;
   onToggleAllCollapsed: (shouldCollapse: boolean) => void;
   onToggleReviewed: (path: string) => void;
+  onOpenInEditor?: (filePath: string, lineNumber: number) => void;
 }
 
 const getFileIcon = (status: DiffFile['status']) => {
@@ -51,8 +53,12 @@ export const DiffViewerHeader = ({
   onToggleCollapsed,
   onToggleAllCollapsed,
   onToggleReviewed,
+  onOpenInEditor,
 }: DiffViewerHeaderProps) => {
   const [isCopied, setIsCopied] = useState(false);
+  const firstFileLine =
+    file.chunks.flatMap((chunk) => chunk.lines).find((line) => line.newLineNumber !== undefined)
+      ?.newLineNumber ?? 1;
 
   return (
     <div
@@ -104,18 +110,6 @@ export const DiffViewerHeader = ({
         >
           {isCopied ? <Check size={14} /> : <Copy size={14} />}
         </button>
-        {reviewUrl && (
-          <a
-            href={buildGitLabDiffFileUrl(reviewUrl, file.path)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded bg-transparent px-1.5 py-1 text-github-text-secondary transition-all hover:bg-github-bg-tertiary hover:text-github-text-primary"
-            title="Open file in GitLab diff"
-            aria-label={`Open ${file.path} in GitLab diff`}
-          >
-            <ExternalLink size={14} />
-          </a>
-        )}
         {file.oldPath && file.oldPath !== file.path && (
           <span className="text-xs text-github-text-muted italic">
             (renamed from {file.oldPath})
@@ -141,6 +135,30 @@ export const DiffViewerHeader = ({
             -{file.deletions}
           </span>
         </div>
+        {onOpenInEditor && (
+          <button
+            type="button"
+            onClick={() => onOpenInEditor(file.path, firstFileLine)}
+            className="flex items-center gap-1.5 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2.5 py-1.5 text-xs font-medium text-github-text-primary transition-colors hover:bg-github-bg-primary"
+            title="Open file in editor"
+          >
+            <FileCode2 size={14} />
+            Open in editor
+          </button>
+        )}
+        {reviewUrl && (
+          <a
+            href={buildGitLabDiffFileUrl(reviewUrl, file.path)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2.5 py-1.5 text-xs font-medium text-github-text-primary transition-colors hover:bg-github-bg-primary"
+            title="Open file in GitLab diff"
+            aria-label={`Open ${file.path} in GitLab diff`}
+          >
+            <ExternalLink size={14} />
+            Open in GitLab
+          </a>
+        )}
         <button
           onClick={() => onToggleReviewed(file.path)}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${

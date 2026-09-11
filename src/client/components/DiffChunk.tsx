@@ -86,7 +86,6 @@ export const DiffChunk = memo(function DiffChunk({
   commentTrigger,
   onCommentTriggerHandled,
   filename,
-  onOpenInEditor,
 }: DiffChunkProps) {
   const [startLine, setStartLine] = useState<number | null>(null);
   const [endLine, setEndLine] = useState<number | null>(null);
@@ -410,7 +409,6 @@ export const DiffChunk = memo(function DiffChunk({
         onReplyToThread={onReplyToThread}
         onRemoveMessage={onRemoveMessage}
         onUpdateMessage={onUpdateMessage}
-        onOpenInEditor={onOpenInEditor}
         syntaxTheme={syntaxTheme}
         cursor={cursor}
         fileIndex={fileIndex}
@@ -486,19 +484,8 @@ export const DiffChunk = memo(function DiffChunk({
                       selection,
                     });
                   }}
-                  onOpenInEditor={
-                    onOpenInEditor &&
-                    filename &&
-                    line.type !== 'delete' &&
-                    (line.newLineNumber || line.oldLineNumber)
-                      ? () => {
-                          const lineNumber = line.newLineNumber || line.oldLineNumber;
-                          if (!lineNumber) return;
-                          if (!filename) return;
-                          onOpenInEditor(filename, lineNumber);
-                        }
-                      : undefined
-                  }
+                  reviewUrl={reviewUrl}
+                  gitLabLine={getGitLabLineFragment(line)}
                   syntaxTheme={syntaxTheme}
                   filename={filename}
                   diffSegments={wordLevelDiffMap.get(index)}

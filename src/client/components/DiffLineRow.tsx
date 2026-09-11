@@ -5,7 +5,7 @@ import { type DiffSegment } from '../utils/wordLevelDiff';
 
 import { CommentButton } from './CommentButton';
 import { DiffCodeLine } from './DiffCodeLine';
-import { OpenInEditorButton } from './OpenInEditorButton';
+import { OpenInGitLabButton } from './OpenInGitLabButton';
 import type { AppearanceSettings } from './SettingsModal';
 
 interface DiffLineRowProps {
@@ -19,7 +19,8 @@ interface DiffLineRowProps {
   onMouseLeave: () => void;
   onMouseMove: () => void;
   onCommentButtonMouseDown: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  onOpenInEditor?: () => void;
+  reviewUrl?: string;
+  gitLabLine?: string;
   syntaxTheme?: AppearanceSettings['syntaxTheme'];
   onClick?: (e: React.MouseEvent<HTMLTableRowElement>) => void;
   filename?: string;
@@ -53,7 +54,8 @@ export const DiffLineRow: React.FC<DiffLineRowProps> = React.memo(
     onMouseLeave,
     onMouseMove,
     onCommentButtonMouseDown,
-    onOpenInEditor,
+    reviewUrl,
+    gitLabLine,
     syntaxTheme,
     onClick,
     filename,
@@ -81,7 +83,13 @@ export const DiffLineRow: React.FC<DiffLineRowProps> = React.memo(
           <span>{line.newLineNumber || ''}</span>
           {showLineActions && (
             <>
-              {onOpenInEditor && <OpenInEditorButton onClick={onOpenInEditor} />}
+              {reviewUrl && filename && gitLabLine && (
+                <OpenInGitLabButton
+                  reviewUrl={reviewUrl}
+                  filePath={filename}
+                  lineFragment={gitLabLine}
+                />
+              )}
               <CommentButton onMouseDown={onCommentButtonMouseDown} />
             </>
           )}

@@ -22,7 +22,7 @@ import { CommentButton } from './CommentButton';
 import { CommentForm } from './CommentForm';
 import { CommentThreadCard } from './CommentThreadCard';
 import { EnhancedPrismSyntaxHighlighter } from './EnhancedPrismSyntaxHighlighter';
-import { OpenInEditorButton } from './OpenInEditorButton';
+import { OpenInGitLabButton } from './OpenInGitLabButton';
 import type { AppearanceSettings } from './SettingsModal';
 import { WordLevelDiffHighlighter } from './WordLevelDiffHighlighter';
 
@@ -61,7 +61,6 @@ interface SideBySideDiffChunkProps {
   } | null;
   onCommentTriggerHandled?: () => void;
   filename?: string;
-  onOpenInEditor?: (filePath: string, lineNumber: number) => void;
 }
 
 interface SideBySideLine {
@@ -166,7 +165,6 @@ export function SideBySideDiffChunk({
   commentTrigger,
   onCommentTriggerHandled,
   filename,
-  onOpenInEditor,
 }: SideBySideDiffChunkProps) {
   const { getOldTokens, getNewTokens } = useFileLevelTokensLookup();
   const [startLine, setStartLine] = useState<LineSelection | null>(null);
@@ -672,18 +670,13 @@ export function SideBySideDiffChunk({
                     {hoveredLine?.side === 'old' &&
                       hoveredLine?.lineNumber === sideLine.oldLineNumber && (
                         <>
-                          {onOpenInEditor &&
-                            filename &&
-                            sideLine.oldLine?.type !== 'delete' &&
-                            sideLine.newLineNumber !== undefined && (
-                              <OpenInEditorButton
-                                onClick={() => {
-                                  const lineNumber = sideLine.newLineNumber;
-                                  if (!filename || lineNumber === undefined) return;
-                                  onOpenInEditor(filename, lineNumber);
-                                }}
-                              />
-                            )}
+                          {reviewUrl && filename && getGitLabLineFragment(sideLine.oldLine) && (
+                            <OpenInGitLabButton
+                              reviewUrl={reviewUrl}
+                              filePath={filename}
+                              lineFragment={getGitLabLineFragment(sideLine.oldLine) as string}
+                            />
+                          )}
                           <CommentButton
                             onMouseDown={(e) => {
                               e.stopPropagation();
@@ -734,13 +727,11 @@ export function SideBySideDiffChunk({
                     {hoveredLine?.side === 'new' &&
                       hoveredLine?.lineNumber === sideLine.newLineNumber && (
                         <>
-                          {onOpenInEditor && filename && sideLine.newLineNumber !== undefined && (
-                            <OpenInEditorButton
-                              onClick={() => {
-                                const lineNumber = sideLine.newLineNumber;
-                                if (!filename || lineNumber === undefined) return;
-                                onOpenInEditor(filename, lineNumber);
-                              }}
+                          {reviewUrl && filename && getGitLabLineFragment(sideLine.newLine) && (
+                            <OpenInGitLabButton
+                              reviewUrl={reviewUrl}
+                              filePath={filename}
+                              lineFragment={getGitLabLineFragment(sideLine.newLine) as string}
                             />
                           )}
                           <CommentButton

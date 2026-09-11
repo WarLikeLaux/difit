@@ -364,7 +364,6 @@ export const DiffViewer = memo(function DiffViewer({
     onReplyToThread,
     onRemoveMessage,
     onUpdateMessage,
-    onOpenInEditor,
     onLineClick,
     commentTrigger,
     onCommentTriggerHandled,
@@ -379,6 +378,7 @@ export const DiffViewer = memo(function DiffViewer({
       <DiffViewerHeader
         file={file}
         reviewUrl={reviewUrl}
+        onOpenInEditor={onOpenInEditor}
         isCollapsed={isCollapsed}
         isFocused={isFocused}
         isReviewed={reviewedFiles.has(file.path)}
