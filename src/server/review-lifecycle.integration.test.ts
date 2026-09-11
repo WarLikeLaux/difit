@@ -227,4 +227,54 @@ describe('branch review lifecycle', () => {
     ).json()) as { threads: Array<{ id: string }> };
     expect(comments.threads.map((thread) => thread.id)).toContain('legacy-thread');
   });
+
+  it('does not migrate an ambiguous working-tree session into a branch review', async () => {
+    const git = simpleGit(repositoryPath);
+    const base = (await git.raw(['rev-list', '--max-parents=0', 'HEAD'])).trim();
+    const repositoryId = createHash('sha256').update(repositoryPath).digest('hex');
+    const createdAt = new Date().toISOString();
+    await writeCommentSessions(
+      repositoryId,
+      new Map([
+        [
+          `${base.slice(0, 7)}:.:merge-base`,
+          {
+            version: 1,
+            threads: [
+              {
+                id: 'ambiguous-thread',
+                filePath: 'example.txt',
+                position: { side: 'new', line: 2 },
+                createdAt,
+                updatedAt: createdAt,
+                messages: [
+                  {
+                    id: 'ambiguous-message',
+                    body: 'Comment from an unknown branch',
+                    createdAt,
+                    updatedAt: createdAt,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+
+    const started = await startServer({
+      selection: { baseCommitish: base, targetCommitish: '.', baseMode: 'merge-base' },
+      repoPath: repositoryPath,
+      preferredPort: 9340,
+      openBrowser: false,
+      keepAlive: true,
+      diffMode: DiffMode.DOT,
+    });
+    reviewServer = started.server;
+
+    const comments = (await (
+      await fetch(`http://localhost:${started.port}/api/comments-json`)
+    ).json()) as { threads: Array<{ id: string }> };
+    expect(comments.threads).toEqual([]);
+  });
 });

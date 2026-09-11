@@ -319,7 +319,8 @@ export async function startServer(
   };
   if (
     reviewContext &&
-    (reviewContext.followsBranch || reviewContext.reviewUrl) &&
+    reviewContext.reviewUrl &&
+    !reviewContext.followsBranch &&
     !commentSessions.has(reviewContext.sessionKey)
   ) {
     const legacySession = reviewContext.legacySessionKeys
