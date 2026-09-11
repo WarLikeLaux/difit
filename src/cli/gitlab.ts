@@ -1,6 +1,41 @@
-import { execFileSync } from 'child_process';
+import { execFileSync, type ExecFileSyncOptionsWithStringEncoding } from 'child_process';
 
 const GITLAB_MERGE_REQUEST_PATH = /\/-\/merge_requests\/\d+(?:\/diffs)?\/?$/;
+
+type ExecFile = typeof execFileSync;
+
+function readGitLabMergeRequestUrl(
+  repoPath: string | undefined,
+  branchArgument: string[],
+  execFile: ExecFile,
+): string | undefined {
+  const output = execFile('glab', ['mr', 'view', ...branchArgument, '--output', 'json'], {
+    cwd: repoPath,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 5_000,
+    env: { ...process.env, GLAB_PROMPT_DISABLED: 'true' },
+  });
+  const result = JSON.parse(output) as { web_url?: unknown };
+  return typeof result.web_url === 'string'
+    ? normalizeGitLabMergeRequestUrl(result.web_url)
+    : undefined;
+}
+
+function resolvesToCurrentHead(
+  repoPath: string | undefined,
+  targetCommitish: string,
+  execFile: ExecFile,
+): boolean {
+  const options: ExecFileSyncOptionsWithStringEncoding = {
+    cwd: repoPath,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  };
+  const target = execFile('git', ['rev-parse', targetCommitish], options).trim();
+  const head = execFile('git', ['rev-parse', 'HEAD'], options).trim();
+  return target === head;
+}
 
 export function normalizeGitLabMergeRequestUrl(value: string): string | undefined {
   try {
@@ -24,6 +59,7 @@ export function normalizeGitLabMergeRequestUrl(value: string): string | undefine
 export function detectGitLabMergeRequestUrl(
   repoPath: string | undefined,
   targetCommitish: string,
+  execFile: ExecFile = execFileSync,
 ): string | undefined {
   const branchArgument =
     targetCommitish === 'HEAD' ||
@@ -34,18 +70,15 @@ export function detectGitLabMergeRequestUrl(
       : [targetCommitish.replace(/^origin\//, '')];
 
   try {
-    const output = execFileSync('glab', ['mr', 'view', ...branchArgument, '--output', 'json'], {
-      cwd: repoPath,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 5_000,
-      env: { ...process.env, GLAB_PROMPT_DISABLED: 'true' },
-    });
-    const result = JSON.parse(output) as { web_url?: unknown };
-    return typeof result.web_url === 'string'
-      ? normalizeGitLabMergeRequestUrl(result.web_url)
-      : undefined;
+    return readGitLabMergeRequestUrl(repoPath, branchArgument, execFile);
   } catch {
-    return undefined;
+    if (branchArgument.length === 0) return undefined;
+
+    try {
+      if (!resolvesToCurrentHead(repoPath, targetCommitish, execFile)) return undefined;
+      return readGitLabMergeRequestUrl(repoPath, [], execFile);
+    } catch {
+      return undefined;
+    }
   }
 }

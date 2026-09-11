@@ -637,6 +637,7 @@ export async function startServer(
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
       acceptedAt: thread.acceptedAt,
+      readyAt: thread.readyAt,
       resolvedAt: thread.resolvedAt,
       codeContent: thread.codeSnapshot?.content,
       messages: thread.messages,
@@ -683,6 +684,7 @@ export async function startServer(
       createdAt: thread.createdAt || firstMessage?.createdAt || now,
       updatedAt: thread.updatedAt || lastMessage?.updatedAt || thread.createdAt || now,
       acceptedAt: thread.acceptedAt,
+      readyAt: thread.readyAt,
       resolvedAt: thread.resolvedAt,
       position: {
         side: thread.side ?? 'new',
@@ -843,6 +845,7 @@ export async function startServer(
             ...thread,
             updatedAt: now,
             acceptedAt: undefined,
+            readyAt: undefined,
             resolvedAt: undefined,
             messages: [...thread.messages, message],
           }
@@ -900,7 +903,7 @@ export async function startServer(
     const now = new Date().toISOString();
     const nextThreads = session.threads.map((thread) =>
       thread.id === threadId
-        ? { ...thread, updatedAt: now, acceptedAt: undefined, resolvedAt: now }
+        ? { ...thread, updatedAt: now, acceptedAt: undefined, readyAt: undefined, resolvedAt: now }
         : thread,
     );
 
@@ -918,7 +921,7 @@ export async function startServer(
     const session = getOrCreateCommentSession(selection);
     const threadId = req.params.threadId;
     const status = (req.body as { status?: unknown } | undefined)?.status;
-    if (status !== 'open' && status !== 'accepted' && status !== 'resolved') {
+    if (status !== 'open' && status !== 'accepted' && status !== 'ready' && status !== 'resolved') {
       res.status(400).json({ error: 'Invalid thread status' });
       return;
     }
@@ -936,6 +939,7 @@ export async function startServer(
             ...thread,
             updatedAt: now,
             acceptedAt: status === 'accepted' ? now : undefined,
+            readyAt: status === 'ready' ? now : undefined,
             resolvedAt: status === 'resolved' ? now : undefined,
           }
         : thread,

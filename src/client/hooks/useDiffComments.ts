@@ -67,6 +67,7 @@ function normalizeThread(thread: DiffCommentThread): CommentThread {
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     acceptedAt: thread.acceptedAt,
+    readyAt: thread.readyAt,
     resolvedAt: thread.resolvedAt,
     codeContent: thread.codeSnapshot?.content,
     messages: thread.messages,
@@ -245,6 +246,7 @@ export function useDiffComments(
               ...thread,
               updatedAt: now,
               acceptedAt: undefined,
+              readyAt: undefined,
               resolvedAt: undefined,
               messages: [
                 ...thread.messages,
@@ -269,7 +271,13 @@ export function useDiffComments(
       const now = new Date().toISOString();
       const newThreads = threads.map((thread) =>
         thread.id === threadId
-          ? { ...thread, updatedAt: now, acceptedAt: undefined, resolvedAt: now }
+          ? {
+              ...thread,
+              updatedAt: now,
+              acceptedAt: undefined,
+              readyAt: undefined,
+              resolvedAt: now,
+            }
           : thread,
       );
       saveThreads(newThreads);
@@ -287,6 +295,7 @@ export function useDiffComments(
           ...thread,
           updatedAt: now,
           acceptedAt: status === 'accepted' ? now : undefined,
+          readyAt: status === 'ready' ? now : undefined,
           resolvedAt: status === 'resolved' ? now : undefined,
         };
       });

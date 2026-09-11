@@ -254,9 +254,11 @@ export function CommentThreadCard({
   const firstLine = Array.isArray(thread.line) ? thread.line[0] : thread.line;
   const threadStatus: CommentThreadStatus = thread.resolvedAt
     ? 'resolved'
-    : thread.acceptedAt
-      ? 'accepted'
-      : 'open';
+    : thread.readyAt
+      ? 'ready'
+      : thread.acceptedAt
+        ? 'accepted'
+        : 'open';
   const repliesHidden = repliesHiddenOverride ?? hideReplies;
 
   useEffect(() => {
@@ -339,9 +341,11 @@ export function CommentThreadCard({
       className={`rounded-md border border-l-4 bg-github-bg-tertiary p-3 shadow-sm transition-all ${
         thread.resolvedAt
           ? 'border-github-border border-l-github-text-muted opacity-75'
-          : thread.acceptedAt
-            ? 'border-blue-600/50 border-l-blue-400'
-            : 'border-yellow-600/50 border-l-yellow-400'
+          : thread.readyAt
+            ? 'border-green-600/50 border-l-green-400'
+            : thread.acceptedAt
+              ? 'border-blue-600/50 border-l-blue-400'
+              : 'border-yellow-600/50 border-l-yellow-400'
       } ${onClick ? 'cursor-pointer hover:shadow-md' : ''}`}
       onClick={onClick}
     >
@@ -394,12 +398,20 @@ export function CommentThreadCard({
                 Resolved
               </span>
             )}
-            {thread.acceptedAt && !thread.resolvedAt && (
+            {thread.acceptedAt && !thread.readyAt && !thread.resolvedAt && (
               <span
                 className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-500/60 px-2 text-[10px] font-medium text-blue-400"
                 aria-label="Accepted thread"
               >
                 Accepted
+              </span>
+            )}
+            {thread.readyAt && !thread.resolvedAt && (
+              <span
+                className="inline-flex h-5 shrink-0 items-center rounded-full border border-green-500/60 px-2 text-[10px] font-medium text-green-400"
+                aria-label="Ready to verify thread"
+              >
+                Ready to verify
               </span>
             )}
             {isCollapsed && (
@@ -426,7 +438,7 @@ export function CommentThreadCard({
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {onThreadStatusChange && (
                 <div className="inline-flex overflow-hidden rounded border border-github-border">
-                  {(['open', 'accepted', 'resolved'] as const).map((status) => (
+                  {(['open', 'accepted', 'ready', 'resolved'] as const).map((status) => (
                     <button
                       key={status}
                       type="button"
@@ -441,7 +453,7 @@ export function CommentThreadCard({
                           : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
                       }`}
                     >
-                      {status}
+                      {status === 'ready' ? 'Ready to verify' : status}
                     </button>
                   ))}
                 </div>

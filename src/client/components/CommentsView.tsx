@@ -65,8 +65,10 @@ export function CommentsView({
   };
 
   const visibleThreads = comments.filter((thread) => {
-    if (threadFilter === 'open') return !thread.acceptedAt && !thread.resolvedAt;
-    if (threadFilter === 'accepted') return Boolean(thread.acceptedAt) && !thread.resolvedAt;
+    if (threadFilter === 'open') return !thread.acceptedAt && !thread.readyAt && !thread.resolvedAt;
+    if (threadFilter === 'accepted')
+      return Boolean(thread.acceptedAt) && !thread.readyAt && !thread.resolvedAt;
+    if (threadFilter === 'ready') return Boolean(thread.readyAt) && !thread.resolvedAt;
     if (threadFilter === 'resolved') return Boolean(thread.resolvedAt);
     return true;
   });
@@ -149,11 +151,15 @@ export function CommentsView({
                 ['all', `All (${comments.length})`],
                 [
                   'open',
-                  `Open (${comments.filter((thread) => !thread.acceptedAt && !thread.resolvedAt).length})`,
+                  `Open (${comments.filter((thread) => !thread.acceptedAt && !thread.readyAt && !thread.resolvedAt).length})`,
                 ],
                 [
                   'accepted',
-                  `Accepted (${comments.filter((thread) => thread.acceptedAt && !thread.resolvedAt).length})`,
+                  `Accepted (${comments.filter((thread) => thread.acceptedAt && !thread.readyAt && !thread.resolvedAt).length})`,
+                ],
+                [
+                  'ready',
+                  `Ready to verify (${comments.filter((thread) => thread.readyAt && !thread.resolvedAt).length})`,
                 ],
                 [
                   'resolved',

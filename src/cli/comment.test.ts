@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { promises as fs } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 import { createCommentCommand, watchCommentOutput } from './comment.js';
 
@@ -17,6 +20,7 @@ describe('createCommentCommand', () => {
     expect(subcommandNames).toContain('get');
     expect(subcommandNames).toContain('watch');
     expect(subcommandNames).toContain('resolve');
+    expect(subcommandNames).toContain('ready');
   });
 
   describe('add subcommand', () => {
@@ -81,6 +85,7 @@ describe('createCommentCommand', () => {
     it('requires --port and defaults to json output', () => {
       expect(watchCommand.options.find((o) => o.long === '--port')?.mandatory).toBe(true);
       expect(watchCommand.options.find((o) => o.long === '--format')?.defaultValue).toBe('json');
+      expect(watchCommand.options.find((o) => o.long === '--cursor-file')).toBeDefined();
     });
   });
 });
@@ -361,6 +366,87 @@ describe('comment subcommand integration', () => {
         { version: 2, threads: [{ id: 'agent-thread' }] },
       ]);
     });
+
+    it('streams each new User message once and persists its cursor', async () => {
+      const temporaryDirectory = await fs.mkdtemp(join(tmpdir(), 'difit-watch-'));
+      const cursorFile = join(temporaryDirectory, 'mr-57.cursor');
+      const existingMessage = {
+        id: 'message-1',
+        body: 'Existing question',
+        author: 'User',
+        createdAt: '2026-09-11T10:00:00.000Z',
+        updatedAt: '2026-09-11T10:00:00.000Z',
+      };
+      const newMessage = {
+        id: 'message-2',
+        body: 'New question',
+        author: 'User',
+        createdAt: '2026-09-11T11:00:00.000Z',
+        updatedAt: '2026-09-11T11:00:00.000Z',
+      };
+      const thread = {
+        id: 'thread-1',
+        filePath: 'src/app.ts',
+        position: { side: 'new', line: 12 },
+      };
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"type":"commentsChanged","version":2}\n\ndata: {"type":"commentsChanged","version":3}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+
+      mockFetch
+        .mockResolvedValueOnce(
+          jsonResponse({ version: 1, threads: [{ ...thread, messages: [existingMessage] }] }),
+        )
+        .mockResolvedValueOnce(
+          new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({
+            version: 2,
+            threads: [{ ...thread, messages: [existingMessage, newMessage] }],
+          }),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({
+            version: 3,
+            threads: [{ ...thread, messages: [existingMessage, newMessage] }],
+          }),
+        );
+
+      await watchCommentOutput(4966, 'json', {
+        cursorFile,
+        maxConnections: 1,
+        reconnectDelayMs: 0,
+      });
+
+      expect(consoleOutput.map((output) => JSON.parse(output))).toEqual([
+        {
+          threadId: 'thread-1',
+          filePath: 'src/app.ts',
+          position: { side: 'new', line: 12 },
+          id: newMessage.id,
+          body: newMessage.body,
+          createdAt: newMessage.createdAt,
+          updatedAt: newMessage.updatedAt,
+        },
+      ]);
+      const cursor = JSON.parse(await fs.readFile(cursorFile, 'utf8')) as {
+        messages: Record<string, string>;
+      };
+      expect(cursor.messages).toEqual({
+        '["thread-1","message-1"]': existingMessage.updatedAt,
+        '["thread-1","message-2"]': newMessage.updatedAt,
+      });
+
+      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+    });
   });
 
   describe('resolve', () => {
@@ -457,6 +543,26 @@ describe('comment subcommand integration', () => {
       expect(consoleErrors[0]).toContain('Cannot connect');
       expect(consoleErrors[0]).toContain('9999');
       expect(process.exit).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('ready', () => {
+    it('marks threads as ready to verify without resolving them', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ success: true, status: 'ready' }));
+
+      const command = createCommentCommand();
+      await command.parseAsync(['node', 'difit', 'ready', '--port', '4966', 'thread-1']);
+
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4966/api/comments/thread-1/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'ready' }),
+      });
+      expect(JSON.parse(consoleOutput[0] ?? '{}')).toMatchObject({
+        success: true,
+        status: 'ready',
+        updated: ['thread-1'],
+      });
     });
   });
 });

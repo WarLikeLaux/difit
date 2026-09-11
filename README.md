@@ -180,6 +180,18 @@ difit includes a review comment system that makes it easy to provide feedback to
 4. **Copy All**: Use "Copy All Prompt" to copy all comments in a structured format
 5. **Persistent Storage**: Comments are saved in browser localStorage per commit
 
+For an agent that follows comments continuously, use a durable cursor file:
+
+```sh
+difit comment watch --port 4966 --cursor-file ~/.cache/difit/current-review.cursor
+```
+
+The first run records existing user messages as the baseline. Later runs emit each new or edited
+`User` message once as one JSON line, including messages written while the watcher was stopped.
+Transient disconnects are retried automatically. An agent can move a completed thread to
+`Ready to verify` with `difit comment ready <thread-id> --port 4966`; in an agent review workflow,
+the reviewer can then resolve it explicitly in the UI.
+
 ### Comment Prompt Format
 
 ```sh

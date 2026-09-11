@@ -204,6 +204,31 @@ describe('CommentsView', () => {
     expect(screen.getByText('Second root comment')).toBeInTheDocument();
   });
 
+  it('keeps ready-to-verify threads separate from open and accepted work', async () => {
+    const user = userEvent.setup();
+    const readyThread: CommentThread = {
+      ...mockThreads[1]!,
+      readyAt: '2026-09-11T00:00:00.000Z',
+    };
+
+    render(
+      <CommentsView
+        comments={[mockThreads[0]!, readyThread]}
+        onRemoveThread={mockRemoveThread}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+      { wrapper },
+    );
+
+    expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ready to verify (1)' }));
+    expect(screen.getByText('Second root comment')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ready to verify thread')).toBeInTheDocument();
+  });
+
   it('provides thread workflow, navigation, deletion, and reply visibility controls', async () => {
     const user = userEvent.setup();
     const onDeleteThread = vi.fn();

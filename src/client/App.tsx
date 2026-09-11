@@ -587,6 +587,7 @@ function App() {
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
         acceptedAt: thread.acceptedAt,
+        readyAt: thread.readyAt,
         resolvedAt: thread.resolvedAt,
         codeContent: thread.codeSnapshot?.content,
         isOutdated: isThreadOutdated(thread, fileLineIndexByPath.get(thread.filePath)),
@@ -1045,7 +1046,9 @@ function App() {
 
     hasSelectedInitialMainViewRef.current = true;
     setMainView(
-      threads.some((thread) => !thread.acceptedAt && !thread.resolvedAt) ? 'comments' : 'diff',
+      threads.some((thread) => !thread.acceptedAt && !thread.readyAt && !thread.resolvedAt)
+        ? 'comments'
+        : 'diff',
     );
   }, [hasBootstrappedComments, threads]);
 

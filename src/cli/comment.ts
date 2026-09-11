@@ -1,4 +1,6 @@
 import { Command, Option } from 'commander';
+import { promises as fs } from 'fs';
+import { dirname } from 'path';
 
 import { parseCommentImportValue } from '../utils/commentImports.js';
 
@@ -13,11 +15,42 @@ interface CommentImportResponse {
 
 interface CommentThreadsResponse {
   version?: number;
-  threads?: Array<{ resolvedAt?: string }>;
+  threads?: Array<{
+    id: string;
+    filePath: string;
+    position: unknown;
+    resolvedAt?: string;
+    messages: Array<{
+      id: string;
+      body: string;
+      author?: string;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  }>;
 }
 
 type CommentOutputFormat = 'text' | 'json';
-type MutableCommentStatus = 'open' | 'accepted';
+type MutableCommentStatus = 'open' | 'accepted' | 'ready';
+
+interface CommentWatchCursor {
+  version: 1;
+  messages: Record<string, string>;
+}
+
+interface UserCommentEvent {
+  threadId: string;
+  filePath: string;
+  position: unknown;
+  id: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function getCursorMessageKey(event: Pick<UserCommentEvent, 'threadId' | 'id'>): string {
+  return JSON.stringify([event.threadId, event.id]);
+}
 
 async function fetchCommentOutput(port: number, format: CommentOutputFormat): Promise<string> {
   const endpoint = format === 'json' ? '/api/comments-json' : '/api/comments-output';
@@ -41,6 +74,79 @@ async function fetchCommentOutput(port: number, format: CommentOutputFormat): Pr
 interface WatchCommentOutputOptions {
   maxConnections?: number;
   reconnectDelayMs?: number;
+  cursorFile?: string;
+}
+
+async function fetchCommentThreads(port: number): Promise<CommentThreadsResponse> {
+  const response = await fetch(`http://localhost:${port}/api/comments-json`);
+  if (!response.ok) throw new Error('Failed to retrieve comments');
+  return (await response.json()) as CommentThreadsResponse;
+}
+
+function getUserCommentEvents(data: CommentThreadsResponse): UserCommentEvent[] {
+  return (data.threads ?? [])
+    .flatMap((thread) =>
+      thread.messages
+        .filter((message) => message.author?.trim() === 'User')
+        .map((message) => ({
+          threadId: thread.id,
+          filePath: thread.filePath,
+          position: thread.position,
+          id: message.id,
+          body: message.body,
+          createdAt: message.createdAt,
+          updatedAt: message.updatedAt,
+        })),
+    )
+    .sort(
+      (left, right) =>
+        left.updatedAt.localeCompare(right.updatedAt) || left.id.localeCompare(right.id),
+    );
+}
+
+async function readWatchCursor(path: string): Promise<CommentWatchCursor | undefined> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(path, 'utf8')) as Partial<CommentWatchCursor>;
+    if (parsed.version !== 1 || !parsed.messages || typeof parsed.messages !== 'object') {
+      throw new Error(`Invalid comment watch cursor: ${path}`);
+    }
+    return { version: 1, messages: parsed.messages };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+async function writeWatchCursor(path: string, cursor: CommentWatchCursor): Promise<void> {
+  await fs.mkdir(dirname(path), { recursive: true });
+  const temporaryPath = `${path}.${process.pid}.tmp`;
+  await fs.writeFile(temporaryPath, `${JSON.stringify(cursor, null, 2)}\n`, 'utf8');
+  await fs.rename(temporaryPath, path);
+}
+
+async function emitUnseenUserComments(
+  port: number,
+  cursorFile: string,
+  cursor: CommentWatchCursor | undefined,
+): Promise<CommentWatchCursor> {
+  const events = getUserCommentEvents(await fetchCommentThreads(port));
+  const nextCursor: CommentWatchCursor = cursor ?? { version: 1, messages: {} };
+
+  if (!cursor) {
+    for (const event of events) nextCursor.messages[getCursorMessageKey(event)] = event.updatedAt;
+    await writeWatchCursor(cursorFile, nextCursor);
+    return nextCursor;
+  }
+
+  for (const event of events) {
+    const key = getCursorMessageKey(event);
+    if (nextCursor.messages[key] === event.updatedAt) continue;
+    console.log(JSON.stringify(event));
+    nextCursor.messages[key] = event.updatedAt;
+    await writeWatchCursor(cursorFile, nextCursor);
+  }
+
+  return nextCursor;
 }
 
 export async function watchCommentOutput(
@@ -51,13 +157,16 @@ export async function watchCommentOutput(
   const maxConnections = options.maxConnections ?? Number.POSITIVE_INFINITY;
   const reconnectDelayMs = options.reconnectDelayMs ?? 1_000;
   let previousOutput: string | undefined;
+  let cursor = options.cursorFile ? await readWatchCursor(options.cursorFile) : undefined;
   let connectionCount = 0;
 
   while (connectionCount < maxConnections) {
     connectionCount += 1;
 
     try {
-      if (previousOutput === undefined) {
+      if (options.cursorFile) {
+        cursor = await emitUnseenUserComments(port, options.cursorFile, cursor);
+      } else if (previousOutput === undefined) {
         previousOutput = await fetchCommentOutput(port, format);
         if (previousOutput) console.log(previousOutput);
       }
@@ -98,10 +207,14 @@ export async function watchCommentOutput(
             }
 
             if (event.type === 'commentsChanged') {
-              const nextOutput = await fetchCommentOutput(port, format);
-              if (nextOutput !== previousOutput) {
-                previousOutput = nextOutput;
-                if (nextOutput) console.log(nextOutput);
+              if (options.cursorFile) {
+                cursor = await emitUnseenUserComments(port, options.cursorFile, cursor);
+              } else {
+                const nextOutput = await fetchCommentOutput(port, format);
+                if (nextOutput !== previousOutput) {
+                  previousOutput = nextOutput;
+                  if (nextOutput) console.log(nextOutput);
+                }
               }
             }
           }
@@ -347,9 +460,15 @@ export function createCommentCommand(): Command {
     .addOption(
       new Option('--format <format>', 'output format').choices(['text', 'json']).default('json'),
     )
-    .action(async (opts: { port: number; format: string }) => {
+    .option(
+      '--cursor-file <path>',
+      'persist delivery state and stream each new or edited User message once as JSON',
+    )
+    .action(async (opts: { port: number; format: string; cursorFile?: string }) => {
       try {
-        await watchCommentOutput(opts.port, opts.format as CommentOutputFormat);
+        await watchCommentOutput(opts.port, opts.format as CommentOutputFormat, {
+          cursorFile: opts.cursorFile,
+        });
       } catch (error) {
         handleCommandError(error, opts.port);
       }
@@ -423,6 +542,7 @@ export function createCommentCommand(): Command {
     });
 
   addStatusCommand(comment, 'accept', 'accepted', 'Mark comment threads as accepted');
+  addStatusCommand(comment, 'ready', 'ready', 'Mark comment threads as ready to verify');
   addStatusCommand(comment, 'reopen', 'open', 'Move comment threads back to open');
 
   return comment;
