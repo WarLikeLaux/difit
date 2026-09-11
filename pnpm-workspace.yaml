@@ -2,7 +2,10 @@ packages:
   - .
   - packages/*
 overrides:
+  body-parser: 2.3.0
+  dompurify: 3.4.15
   path-to-regexp: 8.4.0
+  qs: 6.16.0
 allowBuilds:
   '@parcel/watcher': true
   '@vscode/vsce-sign': true

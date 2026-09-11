@@ -140,6 +140,16 @@ describe('branch review lifecycle', () => {
       },
     });
     hubServer = hub.server;
+    const hubPageResponse = await fetch(`http://localhost:${hub.port}/`);
+    const hubPage = await hubPageResponse.text();
+    const nonce = hubPage.match(/<script nonce="([^"]+)">/)?.[1];
+    expect(nonce).toBeTruthy();
+    expect(hubPageResponse.headers.get('Content-Security-Policy')).toContain(
+      `script-src 'self' 'nonce-${nonce}'`,
+    );
+    expect(hubPageResponse.headers.get('Content-Security-Policy')).not.toContain(
+      "script-src 'self' 'unsafe-inline'",
+    );
     const hubResponse = await fetch(`http://localhost:${hub.port}/api/reviews`);
     expect(hubResponse.status).toBe(200);
     const hubReviews = (await hubResponse.json()) as Array<{ id: string; viewerUrl?: string }>;

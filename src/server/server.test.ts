@@ -512,6 +512,17 @@ describe('Server Integration Tests', () => {
       await expect(response.json()).resolves.toEqual({ error: 'Origin is not allowed' });
     });
 
+    it('rejects passive browser requests from another site without relying on Origin', async () => {
+      const response = await fetch(`http://localhost:${port}/api/diff`, {
+        headers: { 'Sec-Fetch-Site': 'cross-site' },
+      });
+
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({
+        error: 'Cross-site browser requests are not allowed',
+      });
+    });
+
     it('rejects custom editor commands from HTTP requests', async () => {
       const response = await fetch(`http://localhost:${port}/api/open-in-editor`, {
         method: 'POST',
@@ -1574,13 +1585,13 @@ describe('Server Integration Tests', () => {
   });
 
   describe('CORS configuration', () => {
-    it('allows only an explicit local browser origin', async () => {
+    it('allows only the viewer origin or the trusted reverse-proxy origin', async () => {
       const result = await startServer({
         selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
       });
       servers.push(result.server);
 
-      const origin = 'http://localhost:5173';
+      const origin = `http://localhost:${result.port}`;
       const response = await fetch(`http://localhost:${result.port}/api/diff`, {
         headers: { Origin: origin },
       });
@@ -1597,6 +1608,39 @@ describe('Server Integration Tests', () => {
       });
       expect(preflight.status).toBe(204);
       expect(preflight.headers.get('Access-Control-Allow-Origin')).toBe(origin);
+
+      const otherLocalApp = await fetch(`http://localhost:${result.port}/api/diff`, {
+        headers: { Origin: 'http://localhost:5173' },
+      });
+      expect(otherLocalApp.status).toBe(403);
+
+      const proxyOrigin = await fetch(`http://localhost:${result.port}/api/diff`, {
+        headers: { Origin: 'https://difit.local' },
+      });
+      expect(proxyOrigin.status).toBe(200);
+      expect(proxyOrigin.headers.get('Access-Control-Allow-Origin')).toBe('https://difit.local');
+    });
+
+    it('sets restrictive browser security and cache headers', async () => {
+      const result = await startServer({
+        selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
+      });
+      servers.push(result.server);
+
+      const response = await fetch(`http://localhost:${result.port}/api/diff`);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+      expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
+      expect(response.headers.get('Origin-Agent-Cluster')).toBe('?1');
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+      expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+      expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'self'");
+      expect(response.headers.get('Content-Security-Policy')).toContain(
+        "img-src 'self' blob: data:",
+      );
+      expect(response.headers.get('Content-Security-Policy')).not.toContain(
+        "script-src 'self' 'unsafe-inline'",
+      );
     });
   });
 

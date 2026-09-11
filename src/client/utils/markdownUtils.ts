@@ -11,7 +11,21 @@ export function isMarkdownFile(filename: string): boolean {
   return extension ? MARKDOWN_EXTENSIONS.includes(extension) : false;
 }
 
-export const isSafeUrl = (url: string) => /^(https?:|mailto:|#|\.{0,2}\/|\/)/i.test(url.trim());
+export const isSafeUrl = (url: string) => {
+  const value = url.trim();
+  if (!value || value.startsWith('//') || value.includes('\\')) return false;
+  return /^(https?:|mailto:|#|\.\/|\.\.\/|\/)/i.test(value);
+};
+
+export const isSafeEmbeddedResourceUrl = (url: string) => {
+  const value = url.trim();
+  if (!value || value.startsWith('//') || value.includes('\\')) return false;
+  return (
+    /^(\.\/|\.\.\/|\/)/.test(value) ||
+    /^blob:/i.test(value) ||
+    /^data:image\/(?:png|jpeg|gif|webp|avif);base64,/i.test(value)
+  );
+};
 
 export const isElementWithCodeProps = (
   node: React.ReactNode,

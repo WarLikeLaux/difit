@@ -5,7 +5,12 @@ import remarkGfm from 'remark-gfm';
 
 import { type DiffLine, type ExpandedLine } from '../../types/diff';
 import { hasSuggestionBlock, parseSuggestionBlocks } from '../../utils/suggestionUtils';
-import { extractMarkdownText, isElementWithCodeProps, isSafeUrl } from '../utils/markdownUtils';
+import {
+  extractMarkdownText,
+  isElementWithCodeProps,
+  isSafeEmbeddedResourceUrl,
+  isSafeUrl,
+} from '../utils/markdownUtils';
 
 import { DiffCodeLine } from './DiffCodeLine';
 import { PrismSyntaxHighlighter } from './PrismSyntaxHighlighter';
@@ -144,7 +149,7 @@ const getCommentMarkdownComponents = (syntaxTheme?: AppearanceSettings['syntaxTh
   },
   img: ({ src, alt }: { src?: string; alt?: string }) => {
     const safeSrc = src ?? '';
-    if (!safeSrc || !isSafeUrl(safeSrc)) {
+    if (!safeSrc || !isSafeEmbeddedResourceUrl(safeSrc)) {
       return null;
     }
     return (

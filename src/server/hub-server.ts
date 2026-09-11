@@ -9,7 +9,12 @@ import type { DiffCommentThread } from '../types/diff.js';
 import { readCommentSessions } from './comment-storage.js';
 import { getReviewBranchState, type ReviewContext } from './review-context.js';
 import { readReviewRegistrations, type ReviewRegistration } from './review-registry.js';
-import { restrictRequestHosts, restrictRequestOrigins } from './request-security.js';
+import {
+  restrictCrossSiteBrowserRequests,
+  restrictRequestHosts,
+  restrictRequestOrigins,
+  setSecurityHeaders,
+} from './request-security.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -190,6 +195,8 @@ export async function startHubServer(
   app.enable('strict routing');
   app.use(restrictRequestHosts(['difit.local', host]));
   app.use(restrictRequestOrigins(['difit.local']));
+  app.use(restrictCrossSiteBrowserRequests());
+  app.use(setSecurityHeaders({ nonceInlineScript: true }));
   const clients = new Set<import('express').Response>();
 
   app.get('/api/reviews', async (_req, res) => {
@@ -271,7 +278,10 @@ export async function startHubServer(
     });
     req.pipe(upstream);
   });
-  app.get('/', (_req, res) => res.type('html').send(HUB_HTML));
+  app.get('/', (_req, res) => {
+    const nonce = res.locals.cspNonce as string;
+    res.type('html').send(HUB_HTML.replace('<script>', `<script nonce="${nonce}">`));
+  });
 
   const refreshTimer = setInterval(() => {
     for (const client of clients) client.write(`data: ${Date.now()}\n\n`);

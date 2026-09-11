@@ -119,6 +119,20 @@ describe('CommentBodyRenderer', () => {
     expect(container.querySelector('img')).toBeNull();
   });
 
+  it('does not fetch external images from markdown comments', () => {
+    const { container } = render(
+      <CommentBodyRenderer body="![tracking pixel](https://attacker.example/pixel.png)" />,
+    );
+
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('renders repository-local markdown images', () => {
+    const { container } = render(<CommentBodyRenderer body="![diagram](/api/blob/diagram.png)" />);
+
+    expect(container.querySelector('img')).toHaveAttribute('src', '/api/blob/diagram.png');
+  });
+
   it('renders suggestion blocks with the suggested code', () => {
     const { container } = render(
       <WordHighlightProvider>

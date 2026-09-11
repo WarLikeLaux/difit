@@ -35,7 +35,12 @@ import {
   type ReviewBranchState,
 } from './review-context.js';
 import { registerReview } from './review-registry.js';
-import { restrictRequestHosts, restrictRequestOrigins } from './request-security.js';
+import {
+  restrictCrossSiteBrowserRequests,
+  restrictRequestHosts,
+  restrictRequestOrigins,
+  setSecurityHeaders,
+} from './request-security.js';
 import { parseUserSettingsPatch, readUserConfig, updateUserClientSettings } from './user-config.js';
 
 import {
@@ -172,10 +177,12 @@ export async function startServer(
     return undefined;
   };
 
-  app.use(express.json());
-  app.use(express.text()); // For sendBeacon text/plain requests
   app.use(restrictRequestHosts(options.host ? [options.host] : []));
   app.use(restrictRequestOrigins(['difit.local']));
+  app.use(restrictCrossSiteBrowserRequests());
+  app.use(setSecurityHeaders());
+  app.use(express.json());
+  app.use(express.text()); // For sendBeacon text/plain requests
 
   const readBranchState = async (): Promise<ReviewBranchState> =>
     reviewContext ? getReviewBranchState(reviewContext) : { stale: false };

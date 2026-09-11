@@ -8,7 +8,12 @@ import { EnhancedPrismSyntaxHighlighter } from '../components/EnhancedPrismSynta
 import { PrismSyntaxHighlighter } from '../components/PrismSyntaxHighlighter';
 import type { MergedChunk } from '../hooks/useExpandedLines';
 import { resolveApiUrl } from '../utils/apiUrl';
-import { extractMarkdownText, isElementWithCodeProps, isSafeUrl } from '../utils/markdownUtils';
+import {
+  extractMarkdownText,
+  isElementWithCodeProps,
+  isSafeEmbeddedResourceUrl,
+  isSafeUrl,
+} from '../utils/markdownUtils';
 
 import { PreviewModeTabs, type PreviewMode } from './PreviewModeTabs';
 import { TextDiffViewer } from './TextDiffViewer';
@@ -644,7 +649,7 @@ const getMarkdownComponents = (syntaxTheme?: DiffViewerBodyProps['syntaxTheme'])
   },
   img: ({ src, alt }: { src?: string; alt?: string }) => {
     const safeSrc = src ?? '';
-    if (!safeSrc || !isSafeUrl(safeSrc)) {
+    if (!safeSrc || !isSafeEmbeddedResourceUrl(safeSrc)) {
       return null;
     }
     return (
