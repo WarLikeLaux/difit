@@ -6,6 +6,7 @@ import {
   PanelLeft,
   Keyboard,
   List,
+  ExternalLink,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
@@ -59,6 +60,7 @@ import { copyTextToClipboard } from './utils/clipboard';
 import { getFileElementId } from './utils/domUtils';
 import { findCommentPosition } from './utils/navigation/positionHelpers';
 import { resolveEventSourceUrl } from './utils/eventSourceUrl';
+import { buildGitLabMergeRequestUrl } from './utils/gitlabLinks';
 import {
   EMPTY_MERGED_CHUNKS_STATE,
   buildMergedChunksState,
@@ -1358,6 +1360,18 @@ function App() {
                 changeType={watchState.lastChangeType}
                 compact={isMobile}
               />
+              {diffData.reviewUrl && (
+                <a
+                  href={buildGitLabMergeRequestUrl(diffData.reviewUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded border border-github-border bg-github-bg-tertiary px-3 py-1.5 text-xs font-medium text-github-text-primary transition-colors hover:bg-github-bg-primary"
+                  title="Open merge request in GitLab"
+                >
+                  <ExternalLink size={14} />
+                  Open MR
+                </a>
+              )}
             </div>
             <div
               className={`flex flex-wrap items-center text-sm text-github-text-secondary ${

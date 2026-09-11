@@ -3,8 +3,19 @@ import { describe, expect, it } from 'vitest';
 import {
   buildGitLabDiffFileUrl,
   buildGitLabDiffLineUrl,
+  buildGitLabMergeRequestUrl,
   getGitLabLineFragment,
 } from './gitlabLinks';
+
+describe('buildGitLabMergeRequestUrl', () => {
+  it('removes the diffs route and transient location parameters', () => {
+    expect(
+      buildGitLabMergeRequestUrl(
+        'https://gitlab.example.com/group/project/-/merge_requests/123/diffs?file_path=src%2Fapp.ts#line_hash_A1',
+      ),
+    ).toBe('https://gitlab.example.com/group/project/-/merge_requests/123');
+  });
+});
 
 describe('buildGitLabDiffFileUrl', () => {
   it('builds a Rapid Diffs link for a file', () => {

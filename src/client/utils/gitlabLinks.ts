@@ -2,8 +2,17 @@ import type { DiffLine } from '../../types/diff';
 
 const textEncoder = new TextEncoder();
 
+export function buildGitLabMergeRequestUrl(reviewUrl: string): string {
+  const url = new URL(reviewUrl);
+  url.pathname = url.pathname.replace(/\/diffs\/?$/, '');
+  url.search = '';
+  url.hash = '';
+
+  return url.toString().replace(/\/$/, '');
+}
+
 export function buildGitLabDiffFileUrl(mergeRequestUrl: string, filePath: string): string {
-  const baseUrl = mergeRequestUrl.replace(/\/diffs\/?$/, '').replace(/\/$/, '');
+  const baseUrl = buildGitLabMergeRequestUrl(mergeRequestUrl);
   const url = new URL(`${baseUrl}/diffs`);
   url.searchParams.set('file_path', filePath);
 

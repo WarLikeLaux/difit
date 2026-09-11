@@ -217,6 +217,21 @@ describe('App Component - Clear Comments Functionality', () => {
     expect(screen.queryByText(/Copy All Prompt/)).not.toBeInTheDocument();
   });
 
+  it('links the top toolbar to the merge request overview', async () => {
+    mockFetch({
+      ...mockDiffResponse,
+      reviewUrl:
+        'https://gitlab.example.com/group/project/-/merge_requests/123/diffs?file_path=src%2Fapp.ts',
+    });
+
+    renderApp();
+
+    expect(await screen.findByRole('link', { name: 'Open MR' })).toHaveAttribute(
+      'href',
+      'https://gitlab.example.com/group/project/-/merge_requests/123',
+    );
+  });
+
   describe('Clean flag on Startup', () => {
     it('should clear existing comments when clearComments flag is true in response', async () => {
       const responseWithClearFlag: DiffResponse = {
