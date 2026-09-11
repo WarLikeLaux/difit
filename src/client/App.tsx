@@ -56,6 +56,7 @@ import {
   showExternalMessageNotification,
 } from './utils/commentNotifications';
 import { copyTextToClipboard } from './utils/clipboard';
+import { updateCodeSearchHighlights } from './utils/codeSearchHighlight';
 import { getFileElementId } from './utils/domUtils';
 import { findCommentPosition } from './utils/navigation/positionHelpers';
 import { resolveEventSourceUrl } from './utils/eventSourceUrl';
@@ -372,6 +373,11 @@ function App() {
         .map((file, fileIndex) => ({ file, fileIndex }))
         .filter(({ file }) => fileMatchesCodeFilter(file, deferredCodeFilterText)),
     [deferredCodeFilterText, diffData?.files],
+  );
+
+  useEffect(
+    () => updateCodeSearchHighlights(deferredCodeFilterText),
+    [deferredCodeFilterText, diffMode, renderedFilePaths],
   );
 
   const scrollVisibleFileIntoDiffContainer = useCallback(

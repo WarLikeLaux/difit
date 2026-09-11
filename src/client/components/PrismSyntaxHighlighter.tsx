@@ -26,6 +26,7 @@ export interface PrismSyntaxHighlighterProps {
   ) => React.ReactNode;
   onMouseOver?: (e: React.MouseEvent) => void;
   onMouseOut?: (e: React.MouseEvent) => void;
+  searchableCode?: boolean;
 }
 
 export const PrismSyntaxHighlighter = React.memo(function PrismSyntaxHighlighter({
@@ -38,6 +39,7 @@ export const PrismSyntaxHighlighter = React.memo(function PrismSyntaxHighlighter
   renderToken,
   onMouseOver,
   onMouseOut,
+  searchableCode = false,
 }: PrismSyntaxHighlighterProps) {
   const detectedLang = language || (filename ? getPrismLanguageFromFilename(filename) : 'text');
   const { actualLang } = useHighlightedCode(code, detectedLang);
@@ -50,6 +52,7 @@ export const PrismSyntaxHighlighter = React.memo(function PrismSyntaxHighlighter
       const lines = precomputedTokens ?? tokens;
       return (
         <span
+          data-diff-code-content={searchableCode ? 'true' : undefined}
           className={className}
           style={{
             ...style,
@@ -78,7 +81,7 @@ export const PrismSyntaxHighlighter = React.memo(function PrismSyntaxHighlighter
         </span>
       );
     },
-    [className, onMouseOver, onMouseOut, renderToken, precomputedTokens],
+    [className, onMouseOver, onMouseOut, renderToken, precomputedTokens, searchableCode],
   );
 
   const codeForHighlight = hasPrecomputed ? '' : code;

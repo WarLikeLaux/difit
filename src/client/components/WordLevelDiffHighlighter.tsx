@@ -5,6 +5,7 @@ import { type DiffSegment } from '../utils/wordLevelDiff';
 interface WordLevelDiffHighlighterProps {
   segments: DiffSegment[];
   className?: string;
+  searchableCode?: boolean;
 }
 
 /**
@@ -14,6 +15,7 @@ interface WordLevelDiffHighlighterProps {
 export const WordLevelDiffHighlighter = React.memo(function WordLevelDiffHighlighter({
   segments,
   className = '',
+  searchableCode = false,
 }: WordLevelDiffHighlighterProps) {
   const renderedContent = useMemo(() => {
     return segments.map((segment, index) => {
@@ -32,5 +34,9 @@ export const WordLevelDiffHighlighter = React.memo(function WordLevelDiffHighlig
     });
   }, [segments]);
 
-  return <span className={className}>{renderedContent}</span>;
+  return (
+    <span className={className} data-diff-code-content={searchableCode ? 'true' : undefined}>
+      {renderedContent}
+    </span>
+  );
 });

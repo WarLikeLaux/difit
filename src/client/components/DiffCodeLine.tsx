@@ -70,6 +70,7 @@ export function DiffCodeLine({
       {diffSegments ? (
         <WordLevelDiffHighlighter
           segments={diffSegments}
+          searchableCode
           className="flex-1 px-3 text-github-text-primary whitespace-pre-wrap break-all overflow-wrap-break-word select-text"
         />
       ) : (
@@ -79,6 +80,7 @@ export function DiffCodeLine({
           syntaxTheme={syntaxTheme}
           filename={filename}
           precomputedTokens={getPrecomputedTokens()}
+          searchableCode
         />
       )}
     </div>

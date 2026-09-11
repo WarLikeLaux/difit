@@ -700,6 +700,7 @@ export function SideBySideDiffChunk({
                         {sideLine.wordLevelDiff ? (
                           <WordLevelDiffHighlighter
                             segments={sideLine.wordLevelDiff.oldSegments}
+                            searchableCode
                             className="flex-1 text-github-text-primary whitespace-pre-wrap break-all overflow-wrap-break-word select-text"
                           />
                         ) : (
@@ -712,6 +713,7 @@ export function SideBySideDiffChunk({
                               getOldTokens,
                               sideLine.oldLine.oldLineNumber,
                             )}
+                            searchableCode
                           />
                         )}
                       </div>
@@ -757,6 +759,7 @@ export function SideBySideDiffChunk({
                         {sideLine.wordLevelDiff ? (
                           <WordLevelDiffHighlighter
                             segments={sideLine.wordLevelDiff.newSegments}
+                            searchableCode
                             className="flex-1 text-github-text-primary whitespace-pre-wrap break-all overflow-wrap-break-word select-text"
                           />
                         ) : (
@@ -769,6 +772,7 @@ export function SideBySideDiffChunk({
                               getNewTokens,
                               sideLine.newLine.newLineNumber,
                             )}
+                            searchableCode
                           />
                         )}
                       </div>
