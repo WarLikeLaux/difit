@@ -544,4 +544,39 @@ describe('CommentThreadCard', () => {
     expect(screen.queryByText('Old agent reply')).not.toBeInTheDocument();
     expect(screen.getByText('Second agent answer')).toBeInTheDocument();
   });
+
+  it('keeps the previous reply visible when the latest user message has no answer yet', () => {
+    render(
+      <CommentThreadCard
+        thread={{
+          ...mockThread,
+          messages: [
+            mockThread.messages[0]!,
+            {
+              id: 'older-agent',
+              body: 'Older agent context',
+              author: 'Agent',
+              createdAt: '2024-01-01T00:01:00Z',
+              updatedAt: '2024-01-01T00:01:00Z',
+            },
+            {
+              id: 'latest-user',
+              body: 'Latest unanswered question',
+              author: 'User',
+              createdAt: '2024-01-01T00:02:00Z',
+              updatedAt: '2024-01-01T00:02:00Z',
+            },
+          ],
+        }}
+        onGeneratePrompt={() => 'thread prompt'}
+        onRemoveThread={vi.fn()}
+        onReplyToThread={vi.fn().mockResolvedValue(undefined)}
+        onRemoveMessage={vi.fn()}
+        onUpdateMessage={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Older agent context')).toBeInTheDocument();
+    expect(screen.getByText('Latest unanswered question')).toBeInTheDocument();
+  });
 });

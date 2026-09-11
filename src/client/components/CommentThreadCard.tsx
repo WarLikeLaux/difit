@@ -338,8 +338,13 @@ export function CommentThreadCard({
       break;
     }
   }
-  const latestConversationReplies =
-    lastUserMessageIndex > 0 ? thread.messages.slice(lastUserMessageIndex) : replyMessages;
+  const latestConversationStart =
+    lastUserMessageIndex > 0
+      ? lastUserMessageIndex === thread.messages.length - 1
+        ? Math.max(1, lastUserMessageIndex - 1)
+        : lastUserMessageIndex
+      : 1;
+  const latestConversationReplies = thread.messages.slice(latestConversationStart);
   const hiddenEarlierReplies = replyMessages.length - latestConversationReplies.length;
   const visibleReplyMessages = showAllReplies ? replyMessages : latestConversationReplies;
 
