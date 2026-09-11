@@ -253,6 +253,7 @@ export function CommentThreadCard({
   const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(Boolean(thread.resolvedAt));
   const [repliesHiddenOverride, setRepliesHiddenOverride] = useState<boolean | null>(null);
+  const [showAllReplies, setShowAllReplies] = useState(false);
   const firstLine = Array.isArray(thread.line) ? thread.line[0] : thread.line;
   const threadStatus: CommentThreadStatus = thread.resolvedAt
     ? 'resolved'
@@ -296,6 +297,7 @@ export function CommentThreadCard({
 
   useEffect(() => {
     setRepliesHiddenOverride(null);
+    setShowAllReplies(false);
   }, [hideReplies]);
 
   const toggleCollapsed = (e: React.MouseEvent) => {
@@ -328,6 +330,8 @@ export function CommentThreadCard({
 
   const rootMessage = thread.messages[0];
   if (!rootMessage) return null;
+  const replyMessages = thread.messages.slice(1);
+  const visibleReplyMessages = showAllReplies ? replyMessages : replyMessages.slice(-2);
 
   return (
     <div
@@ -565,8 +569,23 @@ export function CommentThreadCard({
             hideAction={Boolean(thread.resolvedAt) || Boolean(onThreadStatusChange)}
           />
 
+          {!repliesHidden && replyMessages.length > 2 && (
+            <div className="ml-4 flex justify-end">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setShowAllReplies((current) => !current);
+                }}
+                className="text-xs text-blue-400 hover:text-blue-300 hover:underline"
+              >
+                {showAllReplies ? 'Show last 2' : `Show all ${replyMessages.length} replies`}
+              </button>
+            </div>
+          )}
+
           {!repliesHidden &&
-            thread.messages.slice(1).map((message) => (
+            visibleReplyMessages.map((message) => (
               <div key={message.id} className="ml-4 border-l border-github-border pl-3">
                 <ThreadMessageItem
                   message={message}
@@ -582,9 +601,9 @@ export function CommentThreadCard({
               </div>
             ))}
 
-          {repliesHidden && thread.messages.length > 1 && (
+          {repliesHidden && replyMessages.length > 0 && (
             <div className="ml-4 text-xs text-github-text-muted">
-              {thread.messages.length - 1} replies hidden
+              {replyMessages.length} replies hidden
             </div>
           )}
 

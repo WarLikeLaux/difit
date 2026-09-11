@@ -507,4 +507,39 @@ describe('CommentThreadCard', () => {
 
     expect(onRemoveMessage).toHaveBeenCalledWith('thread-1', 'message-2');
   });
+
+  it('shows only the last two replies by default and can expand them', async () => {
+    const user = userEvent.setup();
+    const replies = [1, 2, 3, 4].map((number) => ({
+      id: `reply-${number}`,
+      body: `Reply ${number}`,
+      author: 'Reviewer',
+      createdAt: `2024-01-01T00:0${number}:00Z`,
+      updatedAt: `2024-01-01T00:0${number}:00Z`,
+    }));
+
+    render(
+      <CommentThreadCard
+        thread={{ ...mockThread, messages: [mockThread.messages[0]!, ...replies] }}
+        onGeneratePrompt={() => 'thread prompt'}
+        onRemoveThread={vi.fn()}
+        onReplyToThread={vi.fn().mockResolvedValue(undefined)}
+        onRemoveMessage={vi.fn()}
+        onUpdateMessage={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('Reply 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reply 2')).not.toBeInTheDocument();
+    expect(screen.getByText('Reply 3')).toBeInTheDocument();
+    expect(screen.getByText('Reply 4')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show all 4 replies' }));
+    expect(screen.getByText('Reply 1')).toBeInTheDocument();
+    expect(screen.getByText('Reply 2')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show last 2' }));
+    expect(screen.queryByText('Reply 1')).not.toBeInTheDocument();
+    expect(screen.getByText('Reply 4')).toBeInTheDocument();
+  });
 });
