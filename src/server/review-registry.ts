@@ -60,11 +60,13 @@ export async function registerReview(
   const now = new Date().toISOString();
   const path = getRegistrationPath(context.id);
   let startedAt = now;
+  let branch = context.branch;
 
   try {
     const existing = JSON.parse(await fs.readFile(path, 'utf8')) as unknown;
     if (isReviewRegistration(existing) && typeof existing.startedAt === 'string') {
       startedAt = existing.startedAt;
+      branch ??= existing.branch;
     }
   } catch {
     // First launch of this review.
@@ -76,7 +78,7 @@ export async function registerReview(
     repositoryId: context.repositoryId,
     repositoryPath: context.repositoryPath,
     sessionKey: context.sessionKey,
-    branch: context.branch,
+    branch,
     baseRef: context.baseRef,
     targetRef: context.targetRef,
     baseMode: context.baseMode,

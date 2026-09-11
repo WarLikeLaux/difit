@@ -47,4 +47,26 @@ describe('review registry', () => {
       }),
     ]);
   });
+
+  it('keeps a known snapshot branch when restarted from another checkout branch', async () => {
+    const context = {
+      id: 'review-id',
+      sessionKey: 'review:review-id',
+      repositoryId: 'repository-id',
+      repositoryPath: '/workspace/project',
+      branch: 'feature/dashboard',
+      baseRef: 'base',
+      targetRef: 'target',
+      baseMode: 'merge-base' as const,
+      followsBranch: false,
+      initialHead: 'abcdef',
+      legacySessionKeys: [],
+    };
+    await registerReview(context, 5001);
+    await registerReview({ ...context, branch: undefined }, 5002);
+
+    expect(await readReviewRegistrations()).toEqual([
+      expect.objectContaining({ branch: 'feature/dashboard', port: 5002 }),
+    ]);
+  });
 });

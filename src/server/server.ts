@@ -250,7 +250,9 @@ export async function startServer(
     Boolean(options.stdinDiff),
   );
   const createCommentSessionKey = (selection: DiffSelection): string =>
-    reviewContext?.followsBranch ? reviewContext.sessionKey : getDiffSelectionKey(selection);
+    reviewContext && (reviewContext.followsBranch || reviewContext.reviewUrl)
+      ? reviewContext.sessionKey
+      : getDiffSelectionKey(selection);
 
   function parseRepositoryRelativePath(filepath: unknown):
     | { ok: true; path: string }
@@ -315,7 +317,11 @@ export async function startServer(
     commentPersistenceQueue = persistence;
     return persistence;
   };
-  if (reviewContext?.followsBranch && !commentSessions.has(reviewContext.sessionKey)) {
+  if (
+    reviewContext &&
+    (reviewContext.followsBranch || reviewContext.reviewUrl) &&
+    !commentSessions.has(reviewContext.sessionKey)
+  ) {
     const legacySession = reviewContext.legacySessionKeys
       .map((key) => commentSessions.get(key))
       .find((session) => session !== undefined);

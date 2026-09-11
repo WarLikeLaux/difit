@@ -144,6 +144,7 @@ describe('branch review lifecycle', () => {
       `http://localhost:${hub.port}${hubReviews[0]?.viewerUrl}api/diff`,
     );
     expect(proxiedDiff.status).toBe(200);
+    expect(proxiedDiff.headers.get('X-Difit-Review-Label')).toBe('feature/one');
     await expect(proxiedDiff.json()).resolves.toMatchObject({ reviewId: hubReviews[0]?.id });
 
     const closeResponse = await fetch(

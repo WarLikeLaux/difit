@@ -86,4 +86,26 @@ describe('review context', () => {
     expect(context.followsBranch).toBe(false);
     expect(context.branch).toBeUndefined();
   });
+
+  it('keeps an MR snapshot writable after the checkout changes branch', async () => {
+    const context = await createReviewContext({
+      repositoryPath: '/workspace/project',
+      repositoryId: 'repository-id',
+      selection: { baseCommitish: 'base', targetCommitish: 'aaaaaaaa' },
+      reviewUrl: 'https://gitlab.example.test/group/project/-/merge_requests/1',
+      git: createGitMock({ head: 'aaaaaaaa', branch: 'feature/review' }) as never,
+    });
+
+    const state = await getReviewBranchState(
+      context,
+      createGitMock({ head: 'dddddddd', branch: 'feature/other' }) as never,
+    );
+
+    expect(context).toMatchObject({
+      branch: 'feature/review',
+      followsBranch: false,
+      sessionKey: `review:${context.id}`,
+    });
+    expect(state).toEqual({ stale: false });
+  });
 });

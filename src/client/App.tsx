@@ -783,6 +783,10 @@ function App() {
         });
         if (!response.ok) throw new Error('Failed to fetch diff data');
         const data = (await response.json()) as DiffResponse;
+        const reviewLabel = response.headers?.get?.('X-Difit-Review-Label')?.trim();
+        document.title = data.reviewId
+          ? `${reviewLabel || data.reviewBranch || 'Snapshot'} · DIFIT`
+          : 'DIFIT';
         if (diffRequestIdRef.current !== requestId) {
           return;
         }

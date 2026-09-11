@@ -60,9 +60,8 @@ export async function createReviewContext({
   const resolvedTarget = targetIsWorkingTree
     ? initialHead
     : await resolveRevision(git, selection.targetCommitish);
-  const followsBranch = Boolean(
-    branch && (targetIsWorkingTree || (reviewUrl && resolvedTarget === initialHead)),
-  );
+  const followsBranch = Boolean(branch && targetIsWorkingTree);
+  const snapshotBranch = branch && resolvedTarget === initialHead ? branch : undefined;
   const baseMode = normalizeBaseMode(selection.baseMode);
   const stableSource = reviewUrl
     ? `review-url:${reviewUrl}`
@@ -89,13 +88,14 @@ export async function createReviewContext({
 
   return {
     id,
-    sessionKey: followsBranch
-      ? `review:${id}`
-      : (legacySessionKeys[0] ??
-        `revision:${shortHash(resolvedBase)}:${shortHash(resolvedTarget)}`),
+    sessionKey:
+      followsBranch || reviewUrl
+        ? `review:${id}`
+        : (legacySessionKeys[0] ??
+          `revision:${shortHash(resolvedBase)}:${shortHash(resolvedTarget)}`),
     repositoryId,
     repositoryPath,
-    branch: followsBranch ? branch : undefined,
+    branch: followsBranch ? branch : snapshotBranch,
     baseRef: selection.baseCommitish,
     targetRef: selection.targetCommitish,
     baseMode,

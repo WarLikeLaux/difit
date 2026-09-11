@@ -208,9 +208,10 @@ This section is unnecessary
 
 ### Review dashboard
 
-Each Git checkout and branch has an isolated review context. New commits on the same branch keep
-the existing threads, while switching the checkout to another branch makes the old viewer
-read-only so comments cannot be written into the wrong review.
+GitLab reviews opened from explicit head/base commits are stable snapshots and remain available
+when the checkout changes branch. Working-tree reviews (`.`, `working`, or `staged`) stay bound to
+their original branch and become read-only after a branch switch so comments cannot be written
+into the wrong review.
 
 Run the local dashboard to see registered reviews and their active threads:
 
