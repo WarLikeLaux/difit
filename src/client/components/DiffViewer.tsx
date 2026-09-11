@@ -5,6 +5,7 @@ import {
   type DiffViewMode,
   type DiffSide,
   type CommentThread,
+  type CommentThreadStatus,
   type LineNumber,
 } from '../../types/diff';
 import { FileLevelTokensProvider } from '../contexts/FileLevelTokensContext';
@@ -39,6 +40,8 @@ interface DiffViewerProps {
   ) => Promise<void>;
   onGenerateThreadPrompt: (thread: CommentThread) => string;
   onRemoveThread: (threadId: string) => void;
+  onDeleteThread?: (threadId: string) => void;
+  onThreadStatusChange?: (threadId: string, status: CommentThreadStatus) => void;
   onReplyToThread: (threadId: string, body: string) => Promise<void>;
   onRemoveMessage: (threadId: string, messageId: string) => void;
   onUpdateMessage: (threadId: string, messageId: string, newBody: string) => void;
@@ -191,6 +194,8 @@ export const DiffViewer = memo(function DiffViewer({
   onAddComment,
   onGenerateThreadPrompt,
   onRemoveThread,
+  onDeleteThread,
+  onThreadStatusChange,
   onReplyToThread,
   onRemoveMessage,
   onUpdateMessage,
@@ -354,6 +359,8 @@ export const DiffViewer = memo(function DiffViewer({
     onAddComment: handleAddComment,
     onGenerateThreadPrompt,
     onRemoveThread,
+    onDeleteThread,
+    onThreadStatusChange,
     onReplyToThread,
     onRemoveMessage,
     onUpdateMessage,

@@ -93,21 +93,6 @@ export function CommentsView({
     [onRemoveThread, selectedIndex, sortedThreads.length],
   );
 
-  const handlePermanentlyDeleteThread = useCallback(
-    (thread: CommentThread) => {
-      if (!onDeleteThread) return;
-
-      const preview = thread.messages[0]?.body || '';
-      if (confirm(`Delete this thread permanently?\n\n"${preview}"`)) {
-        onDeleteThread(thread.id);
-        if (selectedIndex >= sortedThreads.length - 1 && selectedIndex > 0) {
-          setSelectedIndex(selectedIndex - 1);
-        }
-      }
-    },
-    [onDeleteThread, selectedIndex, sortedThreads.length],
-  );
-
   useEffect(() => {
     enableScope('comments-list');
     disableScope('navigation');
@@ -273,7 +258,7 @@ export function CommentsView({
                           }
                         }}
                         onDeleteThread={
-                          onDeleteThread ? () => handlePermanentlyDeleteThread(thread) : undefined
+                          onDeleteThread ? () => onDeleteThread(thread.id) : undefined
                         }
                         onThreadStatusChange={
                           onThreadStatusChange

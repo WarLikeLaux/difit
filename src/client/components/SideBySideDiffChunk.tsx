@@ -5,6 +5,7 @@ import {
   type DiffLine,
   type DiffSide,
   type CommentThread,
+  type CommentThreadStatus,
   type LineNumber,
   type LineSelection,
 } from '../../types/diff';
@@ -39,6 +40,8 @@ interface SideBySideDiffChunkProps {
   ) => Promise<void>;
   onGenerateThreadPrompt: (thread: CommentThread) => string;
   onRemoveThread: (threadId: string) => void;
+  onDeleteThread?: (threadId: string) => void;
+  onThreadStatusChange?: (threadId: string, status: CommentThreadStatus) => void;
   onReplyToThread: (threadId: string, body: string) => Promise<void>;
   onRemoveMessage: (threadId: string, messageId: string) => void;
   onUpdateMessage: (threadId: string, messageId: string, newBody: string) => void;
@@ -151,6 +154,8 @@ export function SideBySideDiffChunk({
   onAddComment,
   onGenerateThreadPrompt,
   onRemoveThread,
+  onDeleteThread,
+  onThreadStatusChange,
   onReplyToThread,
   onRemoveMessage,
   onUpdateMessage,
@@ -818,6 +823,14 @@ export function SideBySideDiffChunk({
                                   )}
                                   onGeneratePrompt={onGenerateThreadPrompt}
                                   onRemoveThread={onRemoveThread}
+                                  onDeleteThread={
+                                    onDeleteThread ? () => onDeleteThread(thread.id) : undefined
+                                  }
+                                  onThreadStatusChange={
+                                    onThreadStatusChange
+                                      ? (status) => onThreadStatusChange(thread.id, status)
+                                      : undefined
+                                  }
                                   onReplyToThread={onReplyToThread}
                                   onRemoveMessage={onRemoveMessage}
                                   onUpdateMessage={onUpdateMessage}

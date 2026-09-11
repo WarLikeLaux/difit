@@ -1604,6 +1604,8 @@ function App() {
                       onAddComment={handleAddComment}
                       onGenerateThreadPrompt={handleGenerateThreadPrompt}
                       onRemoveThread={removeThread}
+                      onDeleteThread={deleteThread}
+                      onThreadStatusChange={setThreadStatus}
                       onReplyToThread={handleReplyToThread}
                       onRemoveMessage={removeMessage}
                       onUpdateMessage={updateMessage}

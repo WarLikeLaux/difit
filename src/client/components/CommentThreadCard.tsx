@@ -250,13 +250,16 @@ export function CommentThreadCard({
   const [isFileCopied, setIsFileCopied] = useState(false);
   const [reviewLineUrl, setReviewLineUrl] = useState<string>();
   const [isReplying, setIsReplying] = useState(false);
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(Boolean(thread.resolvedAt));
+  const [repliesHiddenOverride, setRepliesHiddenOverride] = useState<boolean | null>(null);
   const firstLine = Array.isArray(thread.line) ? thread.line[0] : thread.line;
   const threadStatus: CommentThreadStatus = thread.resolvedAt
     ? 'resolved'
     : thread.acceptedAt
       ? 'accepted'
       : 'open';
+  const repliesHidden = repliesHiddenOverride ?? hideReplies;
 
   useEffect(() => {
     let active = true;
@@ -290,6 +293,10 @@ export function CommentThreadCard({
       setIsCollapsed(collapseRequest.collapsed);
     }
   }, [collapseRequest]);
+
+  useEffect(() => {
+    setRepliesHiddenOverride(null);
+  }, [hideReplies]);
 
   const toggleCollapsed = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -335,167 +342,211 @@ export function CommentThreadCard({
       onClick={onClick}
     >
       <div className={isCollapsed ? '' : 'mb-3'}>
-        <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-github-text-secondary">
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            aria-expanded={!isCollapsed}
-            aria-label={isCollapsed ? 'Expand thread' : 'Collapse thread'}
-            title={isCollapsed ? 'Expand thread' : 'Collapse thread'}
-            className="shrink-0 rounded p-0.5 text-github-text-secondary transition-colors hover:bg-github-bg-primary hover:text-github-text-primary"
-          >
-            {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-          </button>
-          <span
-            className="font-mono px-1 py-0.5 rounded overflow-hidden text-ellipsis whitespace-nowrap"
-            style={{
-              backgroundColor: 'var(--color-yellow-path-bg)',
-              color: 'var(--color-yellow-path-text)',
-            }}
-          >
-            {thread.file}:{lineLabel}
-          </span>
-          {thread.isOutdated && !thread.isOrphaned && (
-            <span
-              className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
-              title="Code has changed since this comment was made"
-              aria-label="Outdated comment"
-            >
-              Outdated
-            </span>
-          )}
-          {thread.isOrphaned && (
-            <span
-              className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
-              title="The file is no longer part of this diff"
-              aria-label="File not in diff"
-            >
-              Not in diff
-            </span>
-          )}
-          {thread.resolvedAt && (
-            <span
-              className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
-              aria-label="Resolved thread"
-            >
-              Resolved
-            </span>
-          )}
-          {thread.acceptedAt && !thread.resolvedAt && (
-            <span
-              className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-500/60 px-2 text-[10px] font-medium text-blue-400"
-              aria-label="Accepted thread"
-            >
-              Accepted
-            </span>
-          )}
-          {isCollapsed && (
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex min-w-[12rem] flex-1 items-center gap-2 text-xs text-github-text-secondary">
             <button
               type="button"
               onClick={toggleCollapsed}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              title="Expand thread"
+              aria-expanded={!isCollapsed}
+              aria-label={isCollapsed ? 'Expand thread' : 'Collapse thread'}
+              title={isCollapsed ? 'Expand thread' : 'Collapse thread'}
+              className="shrink-0 rounded p-0.5 text-github-text-secondary transition-colors hover:bg-github-bg-primary hover:text-github-text-primary"
             >
-              <span className="min-w-0 flex-1 truncate text-github-text-secondary">
-                {rootMessage.body.split('\n')[0]}
-              </span>
-              <span
-                className="inline-flex shrink-0 items-center gap-1 text-github-text-muted"
-                aria-label={`${thread.messages.length} messages in thread`}
-              >
-                <MessageSquare size={12} />
-                {thread.messages.length}
-              </span>
+              {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
             </button>
-          )}
-        </div>
-        {!isCollapsed && (
-          <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-            {onThreadStatusChange && (
-              <select
-                aria-label="Thread status"
-                value={threadStatus}
-                onChange={(event) =>
-                  onThreadStatusChange(event.target.value as CommentThreadStatus)
-                }
-                onClick={(event) => event.stopPropagation()}
-                className="rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary"
-              >
-                <option value="open">Open</option>
-                <option value="accepted">Accepted</option>
-                <option value="resolved">Resolved</option>
-              </select>
-            )}
-            {onNavigateToCode && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onNavigateToCode();
-                }}
-                className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
-                title="Show this thread in the diff"
-              >
-                <Navigation size={12} />
-                Go to Code
-              </button>
-            )}
-            {reviewLineUrl && (
-              <a
-                href={reviewLineUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
-                title="Open this line in GitLab"
-              >
-                <ExternalLink size={12} />
-                Open Link
-              </a>
-            )}
-            <button
-              type="button"
-              onClick={handleCopyFile}
-              className="whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
-              title={`Copy ${thread.file}:${firstLine}`}
-            >
-              <span className="inline-flex items-center gap-1">
-                <FileCode2 size={12} />
-                {isFileCopied ? 'Copied!' : 'Copy File'}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={handleCopyThread}
-              className="whitespace-nowrap rounded px-2 py-1 text-xs transition-all"
+            <span
+              className="font-mono px-1 py-0.5 rounded overflow-hidden text-ellipsis whitespace-nowrap"
               style={{
-                backgroundColor: 'var(--color-yellow-btn-bg)',
-                color: 'var(--color-yellow-btn-text)',
-                border: '1px solid var(--color-yellow-btn-border)',
+                backgroundColor: 'var(--color-yellow-path-bg)',
+                color: 'var(--color-yellow-path-text)',
               }}
-              title="Copy thread prompt for AI coding agent"
             >
-              <span className="inline-flex items-center gap-1">
-                <Copy size={12} />
-                {isCopied ? 'Copied!' : 'Copy Prompt'}
+              {thread.file}:{lineLabel}
+            </span>
+            {thread.isOutdated && !thread.isOrphaned && (
+              <span
+                className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
+                title="Code has changed since this comment was made"
+                aria-label="Outdated comment"
+              >
+                Outdated
               </span>
-            </button>
-            {onDeleteThread && (
+            )}
+            {thread.isOrphaned && (
+              <span
+                className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
+                title="The file is no longer part of this diff"
+                aria-label="File not in diff"
+              >
+                Not in diff
+              </span>
+            )}
+            {thread.resolvedAt && (
+              <span
+                className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
+                aria-label="Resolved thread"
+              >
+                Resolved
+              </span>
+            )}
+            {thread.acceptedAt && !thread.resolvedAt && (
+              <span
+                className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-500/60 px-2 text-[10px] font-medium text-blue-400"
+                aria-label="Accepted thread"
+              >
+                Accepted
+              </span>
+            )}
+            {isCollapsed && (
               <button
                 type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDeleteThread();
-                }}
-                className="rounded border border-github-border bg-github-bg-tertiary p-1.5 text-github-danger transition-all hover:bg-github-bg-primary"
-                title="Delete thread"
-                aria-label="Delete thread"
+                onClick={toggleCollapsed}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                title="Expand thread"
               >
-                <Trash2 size={12} />
+                <span className="min-w-0 flex-1 truncate text-github-text-secondary">
+                  {rootMessage.body.split('\n')[0]}
+                </span>
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 text-github-text-muted"
+                  aria-label={`${thread.messages.length} messages in thread`}
+                >
+                  <MessageSquare size={12} />
+                  {thread.messages.length}
+                </span>
               </button>
             )}
           </div>
-        )}
+          {!isCollapsed && (
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {onThreadStatusChange && (
+                <div className="inline-flex overflow-hidden rounded border border-github-border">
+                  {(['open', 'accepted', 'resolved'] as const).map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      aria-pressed={threadStatus === status}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onThreadStatusChange(status);
+                      }}
+                      className={`border-r border-github-border px-2 py-1 text-xs capitalize transition-colors last:border-r-0 ${
+                        threadStatus === status
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
+                      }`}
+                    >
+                      {status}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {onNavigateToCode && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onNavigateToCode();
+                  }}
+                  className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+                  title="Show this thread in the diff"
+                >
+                  <Navigation size={12} />
+                  Go to Code
+                </button>
+              )}
+              {reviewLineUrl && (
+                <a
+                  href={reviewLineUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+                  title="Open this line in GitLab"
+                >
+                  <ExternalLink size={12} />
+                  Open Link
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={handleCopyFile}
+                className="whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+                title={`Copy ${thread.file}:${firstLine}`}
+              >
+                <span className="inline-flex items-center gap-1">
+                  <FileCode2 size={12} />
+                  {isFileCopied ? 'Copied!' : 'Copy File'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyThread}
+                className="whitespace-nowrap rounded px-2 py-1 text-xs transition-all"
+                style={{
+                  backgroundColor: 'var(--color-yellow-btn-bg)',
+                  color: 'var(--color-yellow-btn-text)',
+                  border: '1px solid var(--color-yellow-btn-border)',
+                }}
+                title="Copy thread prompt for AI coding agent"
+              >
+                <span className="inline-flex items-center gap-1">
+                  <Copy size={12} />
+                  {isCopied ? 'Copied!' : 'Copy Prompt'}
+                </span>
+              </button>
+              {thread.messages.length > 1 && (
+                <button
+                  type="button"
+                  aria-pressed={repliesHidden}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setRepliesHiddenOverride(!repliesHidden);
+                  }}
+                  className="whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-secondary transition-all hover:bg-github-bg-primary hover:text-github-text-primary"
+                >
+                  {repliesHidden ? 'Show replies' : 'Hide replies'}
+                </button>
+              )}
+              {onDeleteThread &&
+                (isDeleteConfirming ? (
+                  <div
+                    className="inline-flex items-center gap-1"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <span className="text-xs text-github-danger">Delete permanently?</span>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteThread()}
+                      className="rounded border border-github-danger px-2 py-1 text-xs text-github-danger hover:bg-github-danger/10"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsDeleteConfirming(false)}
+                      className="rounded border border-github-border px-2 py-1 text-xs text-github-text-secondary hover:bg-github-bg-primary"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsDeleteConfirming(true);
+                    }}
+                    className="rounded border border-github-border bg-github-bg-tertiary p-1.5 text-github-danger transition-all hover:bg-github-bg-primary"
+                    title="Delete thread"
+                    aria-label="Delete thread"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {!isCollapsed && (
@@ -511,10 +562,10 @@ export function CommentThreadCard({
             onResolveOrDelete={() => onRemoveThread(thread.id)}
             actionLabel="Resolve thread"
             confirmPrompt={confirmRootAction ? 'Resolve?' : undefined}
-            hideAction={Boolean(thread.resolvedAt)}
+            hideAction={Boolean(thread.resolvedAt) || Boolean(onThreadStatusChange)}
           />
 
-          {!hideReplies &&
+          {!repliesHidden &&
             thread.messages.slice(1).map((message) => (
               <div key={message.id} className="ml-4 border-l border-github-border pl-3">
                 <ThreadMessageItem
@@ -531,7 +582,7 @@ export function CommentThreadCard({
               </div>
             ))}
 
-          {hideReplies && thread.messages.length > 1 && (
+          {repliesHidden && thread.messages.length > 1 && (
             <div className="ml-4 text-xs text-github-text-muted">
               {thread.messages.length - 1} replies hidden
             </div>

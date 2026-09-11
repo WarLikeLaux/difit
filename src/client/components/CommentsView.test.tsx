@@ -209,11 +209,6 @@ describe('CommentsView', () => {
     const onDeleteThread = vi.fn();
     const onThreadStatusChange = vi.fn();
     const onNavigateToCode = vi.fn();
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => true),
-    );
-
     render(
       <CommentsView
         comments={[mockThreads[0]!]}
@@ -229,17 +224,21 @@ describe('CommentsView', () => {
       { wrapper },
     );
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Thread status' }), 'accepted');
+    await user.click(screen.getByRole('button', { name: 'accepted' }));
     expect(onThreadStatusChange).toHaveBeenCalledWith('thread-1', 'accepted');
 
     await user.click(screen.getByRole('button', { name: 'Go to Code' }));
     expect(onNavigateToCode).toHaveBeenCalledWith(mockThreads[0]);
 
-    await user.click(screen.getByRole('button', { name: 'Hide replies' }));
+    const hideRepliesButtons = screen.getAllByRole('button', { name: 'Hide replies' });
+    expect(hideRepliesButtons).toHaveLength(2);
+    await user.click(hideRepliesButtons[1]!);
     expect(screen.queryByText('First reply')).not.toBeInTheDocument();
     expect(screen.getByText('1 replies hidden')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Delete thread' }));
+    expect(screen.getByText('Delete permanently?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(onDeleteThread).toHaveBeenCalledWith('thread-1');
   });
 
