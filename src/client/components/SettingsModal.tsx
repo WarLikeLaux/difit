@@ -32,6 +32,7 @@ interface AppearanceSettings {
   editor: EditorSettings;
   colorVision: ColorVisionMode;
   autoViewedPatterns: string[];
+  ignoreWhitespace?: boolean;
 }
 
 interface SettingsModalProps {
@@ -56,6 +57,7 @@ const DEFAULT_SETTINGS: AppearanceSettings = {
   },
   colorVision: 'normal',
   autoViewedPatterns: [],
+  ignoreWhitespace: true,
 };
 
 const FONT_FAMILIES = [
@@ -176,6 +178,7 @@ export function SettingsModal({ isOpen, onClose, settings, onSettingsChange }: S
       ...settings,
       editor: { ...DEFAULT_SETTINGS.editor },
       autoViewedPatterns: DEFAULT_SETTINGS.autoViewedPatterns,
+      ignoreWhitespace: DEFAULT_SETTINGS.ignoreWhitespace,
     });
     setAutoViewedPatternsInput(formatAutoViewedPatterns(DEFAULT_SETTINGS.autoViewedPatterns));
   };
@@ -353,6 +356,30 @@ export function SettingsModal({ isOpen, onClose, settings, onSettingsChange }: S
 
             {activeSection === 'system' && (
               <div className="space-y-6">
+                <div>
+                  <label className="flex cursor-pointer items-start gap-3 rounded border border-github-border bg-github-bg-tertiary p-3 transition-colors hover:bg-github-bg-primary">
+                    <input
+                      type="checkbox"
+                      checked={settings.ignoreWhitespace ?? true}
+                      onChange={(event) =>
+                        onSettingsChange({
+                          ...settings,
+                          ignoreWhitespace: event.target.checked,
+                        })
+                      }
+                      className="mt-0.5 size-4 accent-github-accent"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-github-text-primary">
+                        Ignore Whitespace
+                      </span>
+                      <span className="mt-1 block text-sm text-github-text-secondary">
+                        Hide changes that only affect whitespace.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-github-text-primary mb-2">
                     Agent Reply Notifications

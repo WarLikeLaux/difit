@@ -979,7 +979,9 @@ describe('App Component - Revision-aware refetching', () => {
       expect(String(diffCalls[1]?.[0])).toContain('target=HEAD%5E');
     });
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Ignore Whitespace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: /^System/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Ignore Whitespace/ }));
 
     await waitFor(() => {
       const diffCalls = vi

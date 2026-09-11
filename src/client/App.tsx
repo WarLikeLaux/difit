@@ -29,7 +29,6 @@ import {
   normalizeBaseMode,
 } from '../utils/diffSelection';
 
-import { Checkbox } from './components/Checkbox';
 import { CommentsView } from './components/CommentsView';
 import { DiffQuickMenu } from './components/DiffQuickMenu';
 import { DiffViewer } from './components/DiffViewer';
@@ -145,7 +144,6 @@ function App() {
   const [diffData, setDiffData] = useState<DiffResponse | null>(null);
   const [diffDataVersion, setDiffDataVersion] = useState(0);
   const [diffMode, setDiffMode] = useState<DiffViewMode>(getInitialDiffViewMode);
-  const [ignoreWhitespace, setIgnoreWhitespace] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(getInitialSidebarWidth);
@@ -194,6 +192,7 @@ function App() {
   }, [resolvedSelection]);
 
   const { settings, updateSettings } = useAppearanceSettings();
+  const ignoreWhitespace = settings.ignoreWhitespace ?? true;
   const { isMobile, isDesktop } = useViewport();
 
   // New diff-aware comment system
@@ -1346,12 +1345,6 @@ function App() {
                   Comments ({threads.length})
                 </button>
               </div>
-              <Checkbox
-                checked={ignoreWhitespace}
-                onChange={setIgnoreWhitespace}
-                label="Ignore Whitespace"
-                title={ignoreWhitespace ? 'Show whitespace changes' : 'Ignore whitespace changes'}
-              />
               {/* File Watch Reload Button */}
               <ReloadButton
                 shouldReload={shouldReload}
@@ -1360,24 +1353,24 @@ function App() {
                 changeType={watchState.lastChangeType}
                 compact={isMobile}
               />
-              {diffData.reviewUrl && (
-                <a
-                  href={buildGitLabMergeRequestUrl(diffData.reviewUrl)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 rounded border border-github-border bg-github-bg-tertiary px-3 py-1.5 text-xs font-medium text-github-text-primary transition-colors hover:bg-github-bg-primary"
-                  title="Open merge request in GitLab"
-                >
-                  <ExternalLink size={14} />
-                  Open MR
-                </a>
-              )}
             </div>
             <div
               className={`flex flex-wrap items-center text-sm text-github-text-secondary ${
                 isMobile ? 'gap-3' : 'gap-4'
               }`}
             >
+              {diffData.reviewUrl && (
+                <a
+                  href={buildGitLabMergeRequestUrl(diffData.reviewUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-github-accent bg-github-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:brightness-110"
+                  title="Open merge request in GitLab"
+                >
+                  <ExternalLink size={14} />
+                  Open MR
+                </a>
+              )}
               <div className="flex flex-col gap-1 items-center">
                 <div className="text-xs relative">
                   {viewedFiles.size === diffData.files.length

@@ -30,6 +30,7 @@ const baseSettings = {
   },
   colorVision: 'normal' as const,
   autoViewedPatterns: [],
+  ignoreWhitespace: true,
 };
 
 describe('SettingsModal', () => {
@@ -92,6 +93,27 @@ describe('SettingsModal', () => {
     ).toBeTruthy();
     expect(screen.queryByText('Font Size')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^System/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('changes the whitespace setting from the system section', () => {
+    const onSettingsChange = vi.fn();
+    render(
+      <SettingsModal
+        isOpen={true}
+        onClose={vi.fn()}
+        settings={baseSettings}
+        onSettingsChange={onSettingsChange}
+      />,
+      { wrapper },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^System/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Ignore Whitespace/ }));
+
+    expect(onSettingsChange).toHaveBeenLastCalledWith({
+      ...baseSettings,
+      ignoreWhitespace: false,
+    });
   });
 
   it('shows the deuteranopia explanation only while the button is hovered', async () => {

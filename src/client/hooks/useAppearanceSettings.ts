@@ -30,6 +30,7 @@ const DEFAULT_SETTINGS: AppearanceSettings = {
   },
   colorVision: 'normal',
   autoViewedPatterns: [],
+  ignoreWhitespace: true,
 };
 
 /**
