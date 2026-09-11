@@ -20,6 +20,7 @@ describe('createCommentCommand', () => {
     expect(subcommandNames).toContain('get');
     expect(subcommandNames).toContain('watch');
     expect(subcommandNames).toContain('resolve');
+    expect(subcommandNames).toContain('verify');
     expect(subcommandNames).toContain('ready');
   });
 
@@ -367,7 +368,7 @@ describe('comment subcommand integration', () => {
       ]);
     });
 
-    it('streams each new User message once and persists its cursor', async () => {
+    it('streams each new User message and To verify transition once and persists its cursor', async () => {
       const temporaryDirectory = await fs.mkdtemp(join(tmpdir(), 'difit-watch-'));
       const cursorFile = join(temporaryDirectory, 'mr-57.cursor');
       const existingMessage = {
@@ -410,13 +411,25 @@ describe('comment subcommand integration', () => {
         .mockResolvedValueOnce(
           jsonResponse({
             version: 2,
-            threads: [{ ...thread, messages: [existingMessage, newMessage] }],
+            threads: [
+              {
+                ...thread,
+                toVerifyAt: '2026-09-11T11:05:00.000Z',
+                messages: [existingMessage, newMessage],
+              },
+            ],
           }),
         )
         .mockResolvedValueOnce(
           jsonResponse({
             version: 3,
-            threads: [{ ...thread, messages: [existingMessage, newMessage] }],
+            threads: [
+              {
+                ...thread,
+                toVerifyAt: '2026-09-11T11:05:00.000Z',
+                messages: [existingMessage, newMessage],
+              },
+            ],
           }),
         );
 
@@ -436,13 +449,87 @@ describe('comment subcommand integration', () => {
           createdAt: newMessage.createdAt,
           updatedAt: newMessage.updatedAt,
         },
+        {
+          event: 'toVerify',
+          threadId: 'thread-1',
+          filePath: 'src/app.ts',
+          position: { side: 'new', line: 12 },
+          toVerifyAt: '2026-09-11T11:05:00.000Z',
+          messages: [existingMessage, newMessage],
+        },
       ]);
       const cursor = JSON.parse(await fs.readFile(cursorFile, 'utf8')) as {
         messages: Record<string, string>;
+        toVerifyThreads: Record<string, string>;
       };
       expect(cursor.messages).toEqual({
         '["thread-1","message-1"]': existingMessage.updatedAt,
         '["thread-1","message-2"]': newMessage.updatedAt,
+      });
+      expect(cursor.toVerifyThreads).toEqual({
+        'thread-1': '2026-09-11T11:05:00.000Z',
+      });
+
+      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+    });
+
+    it('delivers messages created while a cursor-backed watcher was stopped', async () => {
+      const temporaryDirectory = await fs.mkdtemp(join(tmpdir(), 'difit-watch-resume-'));
+      const cursorFile = join(temporaryDirectory, 'review.cursor');
+      await fs.writeFile(
+        cursorFile,
+        JSON.stringify({
+          version: 1,
+          messages: { '["thread-1","message-1"]': '2026-09-11T10:00:00.000Z' },
+          toVerifyThreads: {},
+        }),
+      );
+      const messages = [
+        {
+          id: 'message-1',
+          body: 'Before pause',
+          author: 'User',
+          createdAt: '2026-09-11T10:00:00.000Z',
+          updatedAt: '2026-09-11T10:00:00.000Z',
+        },
+        {
+          id: 'message-2',
+          body: 'During pause',
+          author: 'User',
+          createdAt: '2026-09-11T12:00:00.000Z',
+          updatedAt: '2026-09-11T12:00:00.000Z',
+        },
+      ];
+      mockFetch
+        .mockResolvedValueOnce(
+          jsonResponse({
+            version: 2,
+            threads: [
+              {
+                id: 'thread-1',
+                filePath: 'src/app.ts',
+                position: { side: 'new', line: 12 },
+                messages,
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(new ReadableStream({ start: (controller) => controller.close() }), {
+            headers: { 'Content-Type': 'text/event-stream' },
+          }),
+        );
+
+      await watchCommentOutput(4966, 'json', {
+        cursorFile,
+        maxConnections: 1,
+        reconnectDelayMs: 0,
+      });
+
+      expect(consoleOutput).toHaveLength(1);
+      expect(JSON.parse(consoleOutput[0] ?? '{}')).toMatchObject({
+        id: 'message-2',
+        body: 'During pause',
       });
 
       await fs.rm(temporaryDirectory, { recursive: true, force: true });
@@ -547,7 +634,7 @@ describe('comment subcommand integration', () => {
   });
 
   describe('ready', () => {
-    it('marks threads as ready to verify without resolving them', async () => {
+    it('marks verified threads as ready without resolving them', async () => {
       mockFetch.mockResolvedValue(jsonResponse({ success: true, status: 'ready' }));
 
       const command = createCommentCommand();
@@ -562,6 +649,19 @@ describe('comment subcommand integration', () => {
         success: true,
         status: 'ready',
         updated: ['thread-1'],
+      });
+    });
+
+    it('marks fixed threads as waiting for verification', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ success: true, status: 'to_verify' }));
+
+      const command = createCommentCommand();
+      await command.parseAsync(['node', 'difit', 'verify', '--port', '4966', 'thread-1']);
+
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4966/api/comments/thread-1/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'to_verify' }),
       });
     });
   });

@@ -67,6 +67,7 @@ function normalizeThread(thread: DiffCommentThread): CommentThread {
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     acceptedAt: thread.acceptedAt,
+    toVerifyAt: thread.toVerifyAt,
     readyAt: thread.readyAt,
     resolvedAt: thread.resolvedAt,
     codeContent: thread.codeSnapshot?.content,
@@ -246,6 +247,7 @@ export function useDiffComments(
               ...thread,
               updatedAt: now,
               acceptedAt: undefined,
+              toVerifyAt: undefined,
               readyAt: undefined,
               resolvedAt: undefined,
               messages: [
@@ -275,6 +277,7 @@ export function useDiffComments(
               ...thread,
               updatedAt: now,
               acceptedAt: undefined,
+              toVerifyAt: undefined,
               readyAt: undefined,
               resolvedAt: now,
             }
@@ -295,6 +298,7 @@ export function useDiffComments(
           ...thread,
           updatedAt: now,
           acceptedAt: status === 'accepted' ? now : undefined,
+          toVerifyAt: status === 'to_verify' ? now : undefined,
           readyAt: status === 'ready' ? now : undefined,
           resolvedAt: status === 'resolved' ? now : undefined,
         };

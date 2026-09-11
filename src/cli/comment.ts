@@ -19,6 +19,8 @@ interface CommentThreadsResponse {
     id: string;
     filePath: string;
     position: unknown;
+    toVerifyAt?: string;
+    readyAt?: string;
     resolvedAt?: string;
     messages: Array<{
       id: string;
@@ -31,11 +33,12 @@ interface CommentThreadsResponse {
 }
 
 type CommentOutputFormat = 'text' | 'json';
-type MutableCommentStatus = 'open' | 'accepted' | 'ready';
+type MutableCommentStatus = 'open' | 'accepted' | 'to_verify' | 'ready';
 
 interface CommentWatchCursor {
   version: 1;
   messages: Record<string, string>;
+  toVerifyThreads: Record<string, string>;
 }
 
 interface UserCommentEvent {
@@ -46,6 +49,15 @@ interface UserCommentEvent {
   body: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface ToVerifyEvent {
+  event: 'toVerify';
+  threadId: string;
+  filePath: string;
+  position: unknown;
+  toVerifyAt: string;
+  messages: NonNullable<CommentThreadsResponse['threads']>[number]['messages'];
 }
 
 function getCursorMessageKey(event: Pick<UserCommentEvent, 'threadId' | 'id'>): string {
@@ -110,7 +122,14 @@ async function readWatchCursor(path: string): Promise<CommentWatchCursor | undef
     if (parsed.version !== 1 || !parsed.messages || typeof parsed.messages !== 'object') {
       throw new Error(`Invalid comment watch cursor: ${path}`);
     }
-    return { version: 1, messages: parsed.messages };
+    return {
+      version: 1,
+      messages: parsed.messages,
+      toVerifyThreads:
+        parsed.toVerifyThreads && typeof parsed.toVerifyThreads === 'object'
+          ? parsed.toVerifyThreads
+          : {},
+    };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
@@ -124,16 +143,35 @@ async function writeWatchCursor(path: string, cursor: CommentWatchCursor): Promi
   await fs.rename(temporaryPath, path);
 }
 
-async function emitUnseenUserComments(
+async function emitUnseenCommentEvents(
   port: number,
   cursorFile: string,
   cursor: CommentWatchCursor | undefined,
 ): Promise<CommentWatchCursor> {
-  const events = getUserCommentEvents(await fetchCommentThreads(port));
-  const nextCursor: CommentWatchCursor = cursor ?? { version: 1, messages: {} };
+  const data = await fetchCommentThreads(port);
+  const events = getUserCommentEvents(data);
+  const toVerifyEvents: ToVerifyEvent[] = (data.threads ?? [])
+    .filter((thread): thread is typeof thread & { toVerifyAt: string } =>
+      Boolean(thread.toVerifyAt),
+    )
+    .map((thread) => ({
+      event: 'toVerify',
+      threadId: thread.id,
+      filePath: thread.filePath,
+      position: thread.position,
+      toVerifyAt: thread.toVerifyAt,
+      messages: thread.messages,
+    }));
+  const nextCursor: CommentWatchCursor = cursor ?? {
+    version: 1,
+    messages: {},
+    toVerifyThreads: {},
+  };
 
   if (!cursor) {
     for (const event of events) nextCursor.messages[getCursorMessageKey(event)] = event.updatedAt;
+    for (const event of toVerifyEvents)
+      nextCursor.toVerifyThreads[event.threadId] = event.toVerifyAt;
     await writeWatchCursor(cursorFile, nextCursor);
     return nextCursor;
   }
@@ -143,6 +181,13 @@ async function emitUnseenUserComments(
     if (nextCursor.messages[key] === event.updatedAt) continue;
     console.log(JSON.stringify(event));
     nextCursor.messages[key] = event.updatedAt;
+    await writeWatchCursor(cursorFile, nextCursor);
+  }
+
+  for (const event of toVerifyEvents) {
+    if (nextCursor.toVerifyThreads[event.threadId] === event.toVerifyAt) continue;
+    console.log(JSON.stringify(event));
+    nextCursor.toVerifyThreads[event.threadId] = event.toVerifyAt;
     await writeWatchCursor(cursorFile, nextCursor);
   }
 
@@ -165,7 +210,7 @@ export async function watchCommentOutput(
 
     try {
       if (options.cursorFile) {
-        cursor = await emitUnseenUserComments(port, options.cursorFile, cursor);
+        cursor = await emitUnseenCommentEvents(port, options.cursorFile, cursor);
       } else if (previousOutput === undefined) {
         previousOutput = await fetchCommentOutput(port, format);
         if (previousOutput) console.log(previousOutput);
@@ -208,7 +253,7 @@ export async function watchCommentOutput(
 
             if (event.type === 'commentsChanged') {
               if (options.cursorFile) {
-                cursor = await emitUnseenUserComments(port, options.cursorFile, cursor);
+                cursor = await emitUnseenCommentEvents(port, options.cursorFile, cursor);
               } else {
                 const nextOutput = await fetchCommentOutput(port, format);
                 if (nextOutput !== previousOutput) {
@@ -462,7 +507,7 @@ export function createCommentCommand(): Command {
     )
     .option(
       '--cursor-file <path>',
-      'persist delivery state and stream each new or edited User message once as JSON',
+      'persist delivery state and stream User messages and To verify transitions once as JSON',
     )
     .action(async (opts: { port: number; format: string; cursorFile?: string }) => {
       try {
@@ -542,7 +587,13 @@ export function createCommentCommand(): Command {
     });
 
   addStatusCommand(comment, 'accept', 'accepted', 'Mark comment threads as accepted');
-  addStatusCommand(comment, 'ready', 'ready', 'Mark comment threads as ready to verify');
+  addStatusCommand(
+    comment,
+    'verify',
+    'to_verify',
+    'Mark comment threads as ready for verification',
+  );
+  addStatusCommand(comment, 'ready', 'ready', 'Mark comment threads as verified and ready');
   addStatusCommand(comment, 'reopen', 'open', 'Move comment threads back to open');
 
   return comment;

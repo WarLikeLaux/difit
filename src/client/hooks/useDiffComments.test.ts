@@ -502,7 +502,7 @@ const next = true;
       expect(result.current.threads[0]?.messages[1]?.body).toBe('Reply comment');
     });
 
-    it('supports accepted and ready-to-verify statuses and permanent thread deletion', () => {
+    it('supports the accepted, to-verify, and ready workflow statuses', () => {
       const { result } = renderHook(() => useDiffComments('main', 'feature-branch', 'abc123'));
       let threadId = '';
 
@@ -518,12 +518,20 @@ const next = true;
       act(() => result.current.setThreadStatus(threadId, 'accepted'));
 
       expect(result.current.threads[0]?.acceptedAt).toEqual(expect.any(String));
+      expect(result.current.threads[0]?.toVerifyAt).toBeUndefined();
       expect(result.current.threads[0]?.readyAt).toBeUndefined();
       expect(result.current.threads[0]?.resolvedAt).toBeUndefined();
+
+      act(() => result.current.setThreadStatus(threadId, 'to_verify'));
+
+      expect(result.current.threads[0]?.acceptedAt).toBeUndefined();
+      expect(result.current.threads[0]?.toVerifyAt).toEqual(expect.any(String));
+      expect(result.current.threads[0]?.readyAt).toBeUndefined();
 
       act(() => result.current.setThreadStatus(threadId, 'ready'));
 
       expect(result.current.threads[0]?.acceptedAt).toBeUndefined();
+      expect(result.current.threads[0]?.toVerifyAt).toBeUndefined();
       expect(result.current.threads[0]?.readyAt).toEqual(expect.any(String));
       expect(result.current.threads[0]?.resolvedAt).toBeUndefined();
 

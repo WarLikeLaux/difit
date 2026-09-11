@@ -256,9 +256,11 @@ export function CommentThreadCard({
     ? 'resolved'
     : thread.readyAt
       ? 'ready'
-      : thread.acceptedAt
-        ? 'accepted'
-        : 'open';
+      : thread.toVerifyAt
+        ? 'to_verify'
+        : thread.acceptedAt
+          ? 'accepted'
+          : 'open';
   const repliesHidden = repliesHiddenOverride ?? hideReplies;
 
   useEffect(() => {
@@ -343,9 +345,11 @@ export function CommentThreadCard({
           ? 'border-github-border border-l-github-text-muted opacity-75'
           : thread.readyAt
             ? 'border-green-600/50 border-l-green-400'
-            : thread.acceptedAt
-              ? 'border-blue-600/50 border-l-blue-400'
-              : 'border-yellow-600/50 border-l-yellow-400'
+            : thread.toVerifyAt
+              ? 'border-purple-600/50 border-l-purple-400'
+              : thread.acceptedAt
+                ? 'border-blue-600/50 border-l-blue-400'
+                : 'border-yellow-600/50 border-l-yellow-400'
       } ${onClick ? 'cursor-pointer hover:shadow-md' : ''}`}
       onClick={onClick}
     >
@@ -398,7 +402,7 @@ export function CommentThreadCard({
                 Resolved
               </span>
             )}
-            {thread.acceptedAt && !thread.readyAt && !thread.resolvedAt && (
+            {thread.acceptedAt && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt && (
               <span
                 className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-500/60 px-2 text-[10px] font-medium text-blue-400"
                 aria-label="Accepted thread"
@@ -406,12 +410,20 @@ export function CommentThreadCard({
                 Accepted
               </span>
             )}
+            {thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt && (
+              <span
+                className="inline-flex h-5 shrink-0 items-center rounded-full border border-purple-500/60 px-2 text-[10px] font-medium text-purple-400"
+                aria-label="To verify thread"
+              >
+                To verify
+              </span>
+            )}
             {thread.readyAt && !thread.resolvedAt && (
               <span
                 className="inline-flex h-5 shrink-0 items-center rounded-full border border-green-500/60 px-2 text-[10px] font-medium text-green-400"
-                aria-label="Ready to verify thread"
+                aria-label="Ready thread"
               >
-                Ready to verify
+                Ready
               </span>
             )}
             {isCollapsed && (
@@ -438,24 +450,26 @@ export function CommentThreadCard({
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {onThreadStatusChange && (
                 <div className="inline-flex overflow-hidden rounded border border-github-border">
-                  {(['open', 'accepted', 'ready', 'resolved'] as const).map((status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      aria-pressed={threadStatus === status}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onThreadStatusChange(status);
-                      }}
-                      className={`border-r border-github-border px-2 py-1 text-xs capitalize transition-colors last:border-r-0 ${
-                        threadStatus === status
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
-                      }`}
-                    >
-                      {status === 'ready' ? 'Ready to verify' : status}
-                    </button>
-                  ))}
+                  {(['open', 'accepted', 'to_verify', 'ready', 'resolved'] as const).map(
+                    (status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        aria-pressed={threadStatus === status}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onThreadStatusChange(status);
+                        }}
+                        className={`border-r border-github-border px-2 py-1 text-xs capitalize transition-colors last:border-r-0 ${
+                          threadStatus === status
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
+                        }`}
+                      >
+                        {status === 'to_verify' ? 'To verify' : status}
+                      </button>
+                    ),
+                  )}
                 </div>
               )}
               <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">

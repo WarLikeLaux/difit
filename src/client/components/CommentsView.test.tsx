@@ -204,16 +204,28 @@ describe('CommentsView', () => {
     expect(screen.getByText('Second root comment')).toBeInTheDocument();
   });
 
-  it('keeps ready-to-verify threads separate from open and accepted work', async () => {
+  it('keeps to-verify and ready threads in separate workflow filters', async () => {
     const user = userEvent.setup();
+    const toVerifyThread: CommentThread = {
+      ...mockThreads[1]!,
+      toVerifyAt: '2026-09-11T00:00:00.000Z',
+    };
     const readyThread: CommentThread = {
       ...mockThreads[1]!,
+      id: 'thread-3',
       readyAt: '2026-09-11T00:00:00.000Z',
+      messages: [
+        {
+          ...mockThreads[1]!.messages[0]!,
+          id: 'thread-3',
+          body: 'Third root comment',
+        },
+      ],
     };
 
     render(
       <CommentsView
-        comments={[mockThreads[0]!, readyThread]}
+        comments={[mockThreads[0]!, toVerifyThread, readyThread]}
         onRemoveThread={mockRemoveThread}
         onGenerateThreadPrompt={mockGenerateThreadPrompt}
         onReplyToThread={mockReplyToThread}
@@ -224,9 +236,13 @@ describe('CommentsView', () => {
     );
 
     expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Ready to verify (1)' }));
+    await user.click(screen.getByRole('button', { name: 'To verify (1)' }));
     expect(screen.getByText('Second root comment')).toBeInTheDocument();
-    expect(screen.getByLabelText('Ready to verify thread')).toBeInTheDocument();
+    expect(screen.getByLabelText('To verify thread')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Ready (1)' }));
+    expect(screen.getByText('Third root comment')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ready thread')).toBeInTheDocument();
   });
 
   it('provides thread workflow, navigation, deletion, and reply visibility controls', async () => {

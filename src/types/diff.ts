@@ -117,6 +117,7 @@ export interface DiffCommentThread {
   createdAt: string; // ISO 8601 format
   updatedAt: string; // ISO 8601 format
   acceptedAt?: string;
+  toVerifyAt?: string;
   readyAt?: string;
   resolvedAt?: string;
 
@@ -199,6 +200,7 @@ export interface CommentThread {
   createdAt: string;
   updatedAt: string;
   acceptedAt?: string;
+  toVerifyAt?: string;
   readyAt?: string;
   resolvedAt?: string;
   codeContent?: string;
@@ -207,7 +209,7 @@ export interface CommentThread {
   messages: DiffCommentMessage[];
 }
 
-export type CommentThreadStatus = 'open' | 'accepted' | 'ready' | 'resolved';
+export type CommentThreadStatus = 'open' | 'accepted' | 'to_verify' | 'ready' | 'resolved';
 
 // Revision selector types
 interface RevisionOption {

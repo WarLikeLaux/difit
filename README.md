@@ -186,11 +186,11 @@ For an agent that follows comments continuously, use a durable cursor file:
 difit comment watch --port 4966 --cursor-file ~/.cache/difit/current-review.cursor
 ```
 
-The first run records existing user messages as the baseline. Later runs emit each new or edited
-`User` message once as one JSON line, including messages written while the watcher was stopped.
-Transient disconnects are retried automatically. An agent can move a completed thread to
-`Ready to verify` with `difit comment ready <thread-id> --port 4966`; in an agent review workflow,
-the reviewer can then resolve it explicitly in the UI.
+The first run records existing user messages and verification requests as the baseline. Later runs
+emit each new or edited `User` message and each new `To verify` transition once as one JSON line,
+including events created while the watcher was stopped. Transient disconnects are retried
+automatically. After checking a `To verify` thread, an agent can mark it `Ready` with
+`difit comment ready <thread-id> --port 4966`; the reviewer can then resolve it explicitly in the UI.
 
 ### Comment Prompt Format
 

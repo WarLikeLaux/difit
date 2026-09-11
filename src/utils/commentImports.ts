@@ -331,6 +331,7 @@ function cloneThread(thread: DiffCommentThread): DiffCommentThread {
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     acceptedAt: thread.acceptedAt,
+    toVerifyAt: thread.toVerifyAt,
     readyAt: thread.readyAt,
     resolvedAt: thread.resolvedAt,
     position: clonePosition(thread.position),
@@ -425,6 +426,7 @@ function mergeThread(
         : incomingThread.createdAt,
     updatedAt,
     acceptedAt: hasNewReply ? undefined : (incomingThread.acceptedAt ?? existingThread.acceptedAt),
+    toVerifyAt: hasNewReply ? undefined : (incomingThread.toVerifyAt ?? existingThread.toVerifyAt),
     readyAt: hasNewReply ? undefined : (incomingThread.readyAt ?? existingThread.readyAt),
     resolvedAt: hasNewReply ? undefined : (incomingThread.resolvedAt ?? existingThread.resolvedAt),
     position: clonePosition(existingThread.position),
@@ -534,6 +536,7 @@ export function mergeCommentImports(
     targetThread.messages = [...targetThread.messages, importedReply];
     targetThread.updatedAt = maxIsoTimestamp(targetThread.updatedAt, importedReply.updatedAt);
     targetThread.acceptedAt = undefined;
+    targetThread.toVerifyAt = undefined;
     targetThread.readyAt = undefined;
     targetThread.resolvedAt = undefined;
   }

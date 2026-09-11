@@ -1158,8 +1158,30 @@ describe('Server Integration Tests', () => {
       let data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
       let thread = data.threads.find((item: any) => item.id === 'status-thread');
       expect(thread.acceptedAt).toEqual(expect.any(String));
+      expect(thread.toVerifyAt).toBeUndefined();
       expect(thread.readyAt).toBeUndefined();
       expect(thread.resolvedAt).toBeUndefined();
+
+      await fetch(`http://localhost:${port}/api/comments/status-thread/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'to_verify' }),
+      });
+      data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
+      thread = data.threads.find((item: any) => item.id === 'status-thread');
+      expect(thread.acceptedAt).toBeUndefined();
+      expect(thread.toVerifyAt).toEqual(expect.any(String));
+      expect(thread.readyAt).toBeUndefined();
+      expect(thread.resolvedAt).toBeUndefined();
+
+      await fetch(`http://localhost:${port}/api/comments/status-thread/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: 'Verification result' }),
+      });
+      data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
+      thread = data.threads.find((item: any) => item.id === 'status-thread');
+      expect(thread.toVerifyAt).toEqual(expect.any(String));
 
       await fetch(`http://localhost:${port}/api/comments/status-thread/status`, {
         method: 'PATCH',
@@ -1169,6 +1191,7 @@ describe('Server Integration Tests', () => {
       data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
       thread = data.threads.find((item: any) => item.id === 'status-thread');
       expect(thread.acceptedAt).toBeUndefined();
+      expect(thread.toVerifyAt).toBeUndefined();
       expect(thread.readyAt).toEqual(expect.any(String));
       expect(thread.resolvedAt).toBeUndefined();
 
@@ -1180,6 +1203,7 @@ describe('Server Integration Tests', () => {
       data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
       thread = data.threads.find((item: any) => item.id === 'status-thread');
       expect(thread.acceptedAt).toBeUndefined();
+      expect(thread.toVerifyAt).toBeUndefined();
       expect(thread.readyAt).toBeUndefined();
       expect(thread.resolvedAt).toBeUndefined();
     });
