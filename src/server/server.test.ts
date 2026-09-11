@@ -1018,6 +1018,66 @@ describe('Server Integration Tests', () => {
       expect(threads).toHaveLength(1);
     });
 
+    it('creates and edits a thread reply without changing markdown characters', async () => {
+      await fetch(`http://localhost:${port}/api/comment-imports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'thread',
+          id: 'editable-thread',
+          filePath: 'src/edit.ts',
+          position: { side: 'new', line: 7 },
+          body: 'Root message',
+        }),
+      });
+
+      const replyBody = "Use `$crm`, ```php\\ncode\\n```, and ['active']";
+      const replyResponse = await fetch(
+        `http://localhost:${port}/api/comments/editable-thread/messages`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: replyBody }),
+        },
+      );
+      expect(replyResponse.ok).toBe(true);
+      const reply = (await replyResponse.json()) as any;
+      expect(reply.message).toMatchObject({ body: replyBody, author: 'Agent' });
+      expect(reply.message.id).toEqual(expect.any(String));
+
+      const editedBody = "Fixed `$crm`, ```php\\nupdated\\n```, and ['active']";
+      const editResponse = await fetch(
+        `http://localhost:${port}/api/comments/editable-thread/messages/${reply.message.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: editedBody }),
+        },
+      );
+      expect(editResponse.ok).toBe(true);
+      const edited = (await editResponse.json()) as any;
+      expect(edited.message).toMatchObject({ id: reply.message.id, body: editedBody });
+
+      const data = (await (
+        await fetch(`http://localhost:${port}/api/comments-json`)
+      ).json()) as any;
+      const thread = data.threads.find((item: any) => item.id === 'editable-thread');
+      expect(thread.messages[1]).toMatchObject({ id: reply.message.id, body: editedBody });
+    });
+
+    it('returns 404 when editing an unknown comment message', async () => {
+      const response = await fetch(
+        `http://localhost:${port}/api/comments/missing-thread/messages/missing-message`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: 'Replacement' }),
+        },
+      );
+
+      expect(response.status).toBe(404);
+    });
+
     it('DELETE /api/comments/:threadId resolves the thread and bumps the version', async () => {
       await fetch(`http://localhost:${port}/api/comment-imports`, {
         method: 'POST',

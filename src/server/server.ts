@@ -24,6 +24,7 @@ import {
   resolveEditorOption,
 } from '../utils/editorOptions.js';
 import { getFileExtension } from '../utils/fileUtils.js';
+import { createId } from '../utils/createId.js';
 
 import { FileWatcherService } from './file-watcher.js';
 import { GitDiffParser } from './git-diff.js';
@@ -810,6 +811,80 @@ export async function startServer(
       console.error('Error parsing comment imports:', error);
       res.status(400).json({ error: 'Invalid comment import data' });
     }
+  });
+
+  app.post('/api/comments/:threadId/messages', async (req, res) => {
+    const selection = getCommentSelectionFromQuery(req.query as Record<string, unknown>);
+    const session = getOrCreateCommentSession(selection);
+    const threadId = req.params.threadId;
+    const body = (req.body as { body?: unknown } | undefined)?.body;
+    if (typeof body !== 'string' || body.trim().length === 0) {
+      res.status(400).json({ error: 'Comment body must not be empty' });
+      return;
+    }
+
+    const existingThread = session.threads.find((thread) => thread.id === threadId);
+    if (!existingThread) {
+      res.status(404).json({ error: `Thread not found: ${threadId}` });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const message = {
+      id: createId(),
+      body,
+      author: 'Agent',
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextThreads = session.threads.map((thread) =>
+      thread.id === threadId
+        ? {
+            ...thread,
+            updatedAt: now,
+            acceptedAt: undefined,
+            resolvedAt: undefined,
+            messages: [...thread.messages, message],
+          }
+        : thread,
+    );
+
+    await updateCommentSession(selection, nextThreads);
+    res.json({ success: true, threadId, message, version: session.version });
+  });
+
+  app.patch('/api/comments/:threadId/messages/:messageId', async (req, res) => {
+    const selection = getCommentSelectionFromQuery(req.query as Record<string, unknown>);
+    const session = getOrCreateCommentSession(selection);
+    const threadId = req.params.threadId;
+    const messageId = req.params.messageId;
+    const body = (req.body as { body?: unknown } | undefined)?.body;
+    if (typeof body !== 'string' || body.trim().length === 0) {
+      res.status(400).json({ error: 'Comment body must not be empty' });
+      return;
+    }
+
+    const existingThread = session.threads.find((thread) => thread.id === threadId);
+    const existingMessage = existingThread?.messages.find((message) => message.id === messageId);
+    if (!existingThread || !existingMessage) {
+      res.status(404).json({ error: `Comment message not found: ${threadId}/${messageId}` });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const message = { ...existingMessage, body, updatedAt: now };
+    const nextThreads = session.threads.map((thread) =>
+      thread.id === threadId
+        ? {
+            ...thread,
+            updatedAt: now,
+            messages: thread.messages.map((item) => (item.id === messageId ? message : item)),
+          }
+        : thread,
+    );
+
+    await updateCommentSession(selection, nextThreads);
+    res.json({ success: true, threadId, message, version: session.version });
   });
 
   app.delete('/api/comments/:threadId', async (req, res) => {

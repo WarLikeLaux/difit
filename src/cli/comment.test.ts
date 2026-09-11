@@ -9,9 +9,11 @@ describe('createCommentCommand', () => {
     expect(command.name()).toBe('comment');
   });
 
-  it('has "add", "get", "watch", and "resolve" subcommands', () => {
+  it('has comment read, write, and workflow subcommands', () => {
     const subcommandNames = command.commands.map((c) => c.name());
     expect(subcommandNames).toContain('add');
+    expect(subcommandNames).toContain('reply');
+    expect(subcommandNames).toContain('edit');
     expect(subcommandNames).toContain('get');
     expect(subcommandNames).toContain('watch');
     expect(subcommandNames).toContain('resolve');
@@ -239,6 +241,75 @@ describe('comment subcommand integration', () => {
       await command.parseAsync(['node', 'difit', 'get', '--port', '4966']);
 
       expect(consoleOutput).toHaveLength(0);
+    });
+  });
+
+  describe('reply and edit', () => {
+    it('replies with the exact body and prints the created message ID', async () => {
+      mockFetch.mockResolvedValue(
+        jsonResponse({
+          success: true,
+          threadId: 'thread/1',
+          message: { id: 'message-2', body: 'Use `$crm` and ```php\ncode\n```' },
+          version: 3,
+        }),
+      );
+
+      const command = createCommentCommand();
+      await command.parseAsync([
+        'node',
+        'difit',
+        'reply',
+        '--port',
+        '4966',
+        'thread/1',
+        'Use `$crm` and ```php\ncode\n```',
+      ]);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:4966/api/comments/thread%2F1/messages',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: 'Use `$crm` and ```php\ncode\n```' }),
+        },
+      );
+      expect(JSON.parse(consoleOutput[0] ?? '{}').message.id).toBe('message-2');
+    });
+
+    it('edits a message with the exact replacement body', async () => {
+      mockFetch.mockResolvedValue(
+        jsonResponse({
+          success: true,
+          threadId: 'thread-1',
+          message: { id: 'message/2', body: "return $crm->save(true, ['active']);" },
+          version: 4,
+        }),
+      );
+
+      const command = createCommentCommand();
+      await command.parseAsync([
+        'node',
+        'difit',
+        'edit',
+        '--port',
+        '4966',
+        'thread-1',
+        'message/2',
+        "return $crm->save(true, ['active']);",
+      ]);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:4966/api/comments/thread-1/messages/message%2F2',
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: "return $crm->save(true, ['active']);" }),
+        },
+      );
+      expect(JSON.parse(consoleOutput[0] ?? '{}').message.body).toBe(
+        "return $crm->save(true, ['active']);",
+      );
     });
   });
 

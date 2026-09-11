@@ -145,6 +145,41 @@ async function parseCommentAddInput(json?: string): Promise<string> {
   return stdin;
 }
 
+async function parseCommentBodyInput(body?: string): Promise<string> {
+  if (typeof body === 'string') {
+    if (!body.trim()) throw new Error('Comment body must not be empty');
+    return body;
+  }
+  if (detectStdinSource() === 'tty') {
+    throw new Error('Provide comment body as an argument or via stdin');
+  }
+  const input = await readStdin();
+  if (!input.trim()) {
+    throw new Error('Comment body must not be empty');
+  }
+
+  return input;
+}
+
+async function updateThreadMessage(
+  port: number,
+  method: 'POST' | 'PATCH',
+  path: string,
+  body: string,
+): Promise<void> {
+  const response = await fetch(`http://localhost:${port}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+  const result = (await response.json().catch(() => ({}))) as { error?: string };
+  if (!response.ok) {
+    throw new Error(result.error ?? 'Failed to update comment');
+  }
+
+  console.log(JSON.stringify(result));
+}
+
 function addStatusCommand(
   comment: Command,
   name: string,
@@ -256,6 +291,54 @@ export function createCommentCommand(): Command {
         handleCommandError(error, opts.port);
       }
     });
+
+  comment
+    .command('reply')
+    .description('Reply to an existing comment thread')
+    .argument('<threadId>', 'thread ID to reply to')
+    .argument('[body]', 'reply body; reads stdin when omitted')
+    .requiredOption('--port <port>', 'port of the running difit server', parseInt)
+    .action(async (threadId: string, body: string | undefined, opts: { port: number }) => {
+      try {
+        const input = await parseCommentBodyInput(body);
+        await updateThreadMessage(
+          opts.port,
+          'POST',
+          `/api/comments/${encodeURIComponent(threadId)}/messages`,
+          input,
+        );
+      } catch (error) {
+        handleCommandError(error, opts.port);
+      }
+    });
+
+  comment
+    .command('edit')
+    .description('Edit an existing comment message')
+    .argument('<threadId>', 'thread ID containing the message')
+    .argument('<messageId>', 'message ID to edit')
+    .argument('[body]', 'replacement body; reads stdin when omitted')
+    .requiredOption('--port <port>', 'port of the running difit server', parseInt)
+    .action(
+      async (
+        threadId: string,
+        messageId: string,
+        body: string | undefined,
+        opts: { port: number },
+      ) => {
+        try {
+          const input = await parseCommentBodyInput(body);
+          await updateThreadMessage(
+            opts.port,
+            'PATCH',
+            `/api/comments/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}`,
+            input,
+          );
+        } catch (error) {
+          handleCommandError(error, opts.port);
+        }
+      },
+    );
 
   comment
     .command('watch')
