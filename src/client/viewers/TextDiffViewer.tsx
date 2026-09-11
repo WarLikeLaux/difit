@@ -9,6 +9,7 @@ export function TextDiffViewer({
   file,
   threads,
   showAuthorBadges,
+  reviewUrl,
   diffMode,
   syntaxTheme,
   cursor,
@@ -103,6 +104,7 @@ export function TextDiffViewer({
                 chunkIndex={mergedIndex}
                 threads={threads}
                 showAuthorBadges={showAuthorBadges}
+                reviewUrl={reviewUrl}
                 onAddComment={onAddComment}
                 onGenerateThreadPrompt={onGenerateThreadPrompt}
                 onRemoveThread={onRemoveThread}

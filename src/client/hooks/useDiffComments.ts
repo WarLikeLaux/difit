@@ -4,6 +4,7 @@ import {
   type BaseMode,
   type CommentImport,
   type CommentThread,
+  type CommentThreadStatus,
   type DiffContextStorage,
   type DiffCommentThread,
   type DiffSide,
@@ -42,6 +43,8 @@ interface UseDiffCommentsReturn {
   removeComment: (commentId: string) => void;
   replyToThread: (params: ReplyToThreadParams) => void;
   removeThread: (threadId: string) => void;
+  deleteThread: (threadId: string) => void;
+  setThreadStatus: (threadId: string, status: CommentThreadStatus) => void;
   updateComment: (commentId: string, newBody: string) => void;
   removeMessage: (threadId: string, messageId: string) => void;
   updateMessage: (threadId: string, messageId: string, newBody: string) => void;
@@ -63,6 +66,8 @@ function normalizeThread(thread: DiffCommentThread): CommentThread {
     side: thread.position.side,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
+    acceptedAt: thread.acceptedAt,
+    resolvedAt: thread.resolvedAt,
     codeContent: thread.codeSnapshot?.content,
     messages: thread.messages,
   };
@@ -239,6 +244,8 @@ export function useDiffComments(
           ? {
               ...thread,
               updatedAt: now,
+              acceptedAt: undefined,
+              resolvedAt: undefined,
               messages: [
                 ...thread.messages,
                 {
@@ -259,7 +266,30 @@ export function useDiffComments(
 
   const removeThread = useCallback(
     (threadId: string) => {
-      const newThreads = threads.filter((thread) => thread.id !== threadId);
+      const now = new Date().toISOString();
+      const newThreads = threads.map((thread) =>
+        thread.id === threadId
+          ? { ...thread, updatedAt: now, acceptedAt: undefined, resolvedAt: now }
+          : thread,
+      );
+      saveThreads(newThreads);
+    },
+    [saveThreads, threads],
+  );
+
+  const setThreadStatus = useCallback(
+    (threadId: string, status: CommentThreadStatus) => {
+      const now = new Date().toISOString();
+      const newThreads = threads.map((thread) => {
+        if (thread.id !== threadId) return thread;
+
+        return {
+          ...thread,
+          updatedAt: now,
+          acceptedAt: status === 'accepted' ? now : undefined,
+          resolvedAt: status === 'resolved' ? now : undefined,
+        };
+      });
       saveThreads(newThreads);
     },
     [saveThreads, threads],
@@ -270,6 +300,13 @@ export function useDiffComments(
       removeThread(commentId);
     },
     [removeThread],
+  );
+
+  const deleteThread = useCallback(
+    (threadId: string) => {
+      saveThreads(threads.filter((thread) => thread.id !== threadId));
+    },
+    [saveThreads, threads],
   );
 
   const removeMessage = useCallback(
@@ -440,7 +477,10 @@ export function useDiffComments(
 
   const generateAllCommentsPrompt = useCallback(
     (context?: CommentPromptDiffContext): string => {
-      return formatAllCommentThreadsPrompt(threads.map(normalizeThread), context);
+      return formatAllCommentThreadsPrompt(
+        threads.filter((thread) => !thread.resolvedAt).map(normalizeThread),
+        context,
+      );
     },
     [threads],
   );
@@ -459,6 +499,8 @@ export function useDiffComments(
     removeComment,
     replyToThread,
     removeThread,
+    deleteThread,
+    setThreadStatus,
     updateComment,
     removeMessage,
     updateMessage,

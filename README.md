@@ -97,6 +97,18 @@ For Enterprise Server PRs, authenticate GitHub CLI against your Enterprise host:
 1. `gh auth login --hostname YOUR-ENTERPRISE-SERVER`
 2. Or set `GH_HOST=YOUR-ENTERPRISE-SERVER` with `GH_TOKEN`/`GITHUB_TOKEN`
 
+### GitLab merge request links
+
+When `glab` is authenticated, difit automatically detects the open merge request for the branch
+being reviewed. You can also provide it explicitly:
+
+```bash
+difit feature-branch develop --merge-base --gitlab-mr https://gitlab.example.com/group/project/-/merge_requests/123
+```
+
+Comment threads then include an **Open Link** action for the matching GitLab diff line and a
+**Copy File** action that copies `path/to/file:line`.
+
 ### Initial Comments
 
 You can inject initial review comments when launching difit:
@@ -147,6 +159,7 @@ Stdin mode is selected with intent-first rules:
 | `[compare-with]`      | -               | Optional second commit to compare with (shows diff between the two)                                     |
 | `--merge-base`        | false           | Resolve the base revision with `git merge-base` before diffing (Git revision mode only)                 |
 | `--pr <url>`          | -               | GitHub PR URL to review (e.g., https://github.com/owner/repo/pull/123)                                  |
+| `--gitlab-mr <url>`   | auto-detected   | GitLab merge request URL used to open comment file and line links                                       |
 | `--comment <json>`    | -               | Inject initial comments (repeatable; accepts a JSON object or array)                                    |
 | `--port`              | 4966            | Preferred port; falls back to +1 if occupied                                                            |
 | `--host`              | 127.0.0.1       | Host address to bind server to (use 0.0.0.0 for external access)                                        |

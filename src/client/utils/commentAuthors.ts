@@ -6,10 +6,7 @@ export function getUniqueCommentAuthors(comments: CommentAuthorLike[]): string[]
   const authors = new Set<string>();
 
   comments.forEach((comment) => {
-    const normalizedAuthor = comment.author?.trim();
-    if (normalizedAuthor) {
-      authors.add(normalizedAuthor);
-    }
+    authors.add(comment.author?.trim() || 'Agent');
   });
 
   return [...authors];

@@ -11,9 +11,9 @@ describe('commentAuthors', () => {
     expect(hasMultipleCommentAuthors([{ author: 'User' }, { author: 'Reviewer' }])).toBe(true);
   });
 
-  it('ignores missing and blank authors', () => {
+  it('labels missing and blank authors as agent messages', () => {
     expect(
       getUniqueCommentAuthors([{ author: 'User' }, {}, { author: '   ' }, { author: 'User' }]),
-    ).toEqual(['User']);
+    ).toEqual(['User', 'Agent']);
   });
 });

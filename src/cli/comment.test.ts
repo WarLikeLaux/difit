@@ -9,10 +9,11 @@ describe('createCommentCommand', () => {
     expect(command.name()).toBe('comment');
   });
 
-  it('has "add", "get", and "resolve" subcommands', () => {
+  it('has "add", "get", "watch", and "resolve" subcommands', () => {
     const subcommandNames = command.commands.map((c) => c.name());
     expect(subcommandNames).toContain('add');
     expect(subcommandNames).toContain('get');
+    expect(subcommandNames).toContain('watch');
     expect(subcommandNames).toContain('resolve');
   });
 
@@ -69,6 +70,15 @@ describe('createCommentCommand', () => {
       expect(args[0].name()).toBe('threadIds');
       expect(args[0].required).toBe(true);
       expect(args[0].variadic).toBe(true);
+    });
+  });
+
+  describe('watch subcommand', () => {
+    const watchCommand = command.commands.find((c) => c.name() === 'watch')!;
+
+    it('requires --port and defaults to json output', () => {
+      expect(watchCommand.options.find((o) => o.long === '--port')?.mandatory).toBe(true);
+      expect(watchCommand.options.find((o) => o.long === '--format')?.defaultValue).toBe('json');
     });
   });
 });
@@ -199,13 +209,17 @@ describe('comment subcommand integration', () => {
     });
 
     it('fetches comments in json format', async () => {
-      mockFetch.mockResolvedValue(jsonResponse({ threads: [{ id: '1' }] }));
+      mockFetch.mockResolvedValue(
+        jsonResponse({
+          threads: [{ id: 'open' }, { id: 'resolved', resolvedAt: '2026-09-11T00:00:00.000Z' }],
+        }),
+      );
 
       const command = createCommentCommand();
       await command.parseAsync(['node', 'difit', 'get', '--port', '4966', '--format', 'json']);
 
       expect(mockFetch).toHaveBeenCalledWith('http://localhost:4966/api/comments-json');
-      expect(consoleOutput[0]).toContain('"threads"');
+      expect(JSON.parse(consoleOutput[0] ?? '{}')).toMatchObject({ threads: [{ id: 'open' }] });
     });
 
     it('handles connection error', async () => {
@@ -225,6 +239,49 @@ describe('comment subcommand integration', () => {
       await command.parseAsync(['node', 'difit', 'get', '--port', '4966']);
 
       expect(consoleOutput).toHaveLength(0);
+    });
+  });
+
+  describe('watch', () => {
+    it('prints the initial comments and streams changed snapshots', async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"type":"connected"}\n\ndata: {"type":"commentsChanged","version":2}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ version: 1, threads: [] }))
+        .mockResolvedValueOnce(
+          new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({
+            version: 2,
+            threads: [{ id: 'agent-thread' }],
+          }),
+        )
+        .mockRejectedValueOnce(new TypeError('fetch failed'));
+
+      const command = createCommentCommand();
+      await command.parseAsync(['node', 'difit', 'watch', '--port', '4966']);
+
+      expect(mockFetch).toHaveBeenNthCalledWith(1, 'http://localhost:4966/api/comments-json');
+      expect(mockFetch).toHaveBeenNthCalledWith(2, 'http://localhost:4966/api/watch', {
+        headers: { Accept: 'text/event-stream' },
+      });
+      expect(mockFetch).toHaveBeenNthCalledWith(3, 'http://localhost:4966/api/comments-json');
+      expect(mockFetch).toHaveBeenNthCalledWith(4, 'http://localhost:4966/api/watch', {
+        headers: { Accept: 'text/event-stream' },
+      });
+      expect(consoleOutput.map((output) => JSON.parse(output))).toEqual([
+        { version: 1, threads: [] },
+        { version: 2, threads: [{ id: 'agent-thread' }] },
+      ]);
     });
   });
 

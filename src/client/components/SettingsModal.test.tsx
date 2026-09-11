@@ -33,6 +33,31 @@ const baseSettings = {
 };
 
 describe('SettingsModal', () => {
+  it('requests desktop notification permission from the system settings', async () => {
+    const requestPermission = vi.fn().mockResolvedValue('granted');
+    vi.stubGlobal('Notification', {
+      permission: 'default',
+      requestPermission,
+    });
+
+    render(
+      <SettingsModal
+        isOpen={true}
+        onClose={vi.fn()}
+        settings={baseSettings}
+        onSettingsChange={vi.fn()}
+      />,
+      { wrapper },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^System/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enable notifications' }));
+
+    await waitFor(() => expect(requestPermission).toHaveBeenCalledOnce());
+    expect(await screen.findByRole('button', { name: 'Notifications enabled' })).toBeDisabled();
+    vi.unstubAllGlobals();
+  });
+
   it('shows appearance settings by default and moves editor selection into the system section', () => {
     render(
       <SettingsModal

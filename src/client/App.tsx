@@ -1,4 +1,12 @@
-import { Columns, AlignLeft, Settings, PanelLeftClose, PanelLeft, Keyboard } from 'lucide-react';
+import {
+  Columns,
+  AlignLeft,
+  Settings,
+  PanelLeftClose,
+  PanelLeft,
+  Keyboard,
+  List,
+} from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 import {
@@ -22,7 +30,7 @@ import {
 
 import { Checkbox } from './components/Checkbox';
 import { CommentsDropdown } from './components/CommentsDropdown';
-import { CommentsListModal } from './components/CommentsListModal';
+import { CommentsView } from './components/CommentsView';
 import { DiffQuickMenu } from './components/DiffQuickMenu';
 import { DiffViewer } from './components/DiffViewer';
 import { FileList } from './components/FileList';
@@ -44,6 +52,10 @@ import { useViewedFiles } from './hooks/useViewedFiles';
 import { useViewport } from './hooks/useViewport';
 import { fetchClientSettings, saveClientSettings } from './services/userSettings';
 import { hasMultipleCommentAuthors } from './utils/commentAuthors';
+import {
+  findNewExternalMessages,
+  showExternalMessageNotification,
+} from './utils/commentNotifications';
 import { copyTextToClipboard } from './utils/clipboard';
 import { getFileElementId } from './utils/domUtils';
 import { findCommentPosition } from './utils/navigation/positionHelpers';
@@ -126,6 +138,8 @@ const getStoredSidebarOpen = (): boolean | null => {
 
 const getInitialFileTreeOpen = () => getStoredSidebarOpen() ?? true;
 
+type MainView = 'diff' | 'comments';
+
 function App() {
   const [diffData, setDiffData] = useState<DiffResponse | null>(null);
   const [diffDataVersion, setDiffDataVersion] = useState(0);
@@ -140,7 +154,7 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [showSparkles, setShowSparkles] = useState(false);
   const [hasTriggeredSparkles, setHasTriggeredSparkles] = useState(false);
-  const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
+  const [mainView, setMainView] = useState<MainView | null>(null);
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const collapsedInitializedRef = useRef(false);
@@ -190,6 +204,8 @@ function App() {
     addThread,
     replyToThread,
     removeThread,
+    deleteThread,
+    setThreadStatus,
     removeMessage,
     updateMessage,
     clearAllComments,
@@ -203,8 +219,11 @@ function App() {
     diffData?.repositoryId, // Repository identifier for storage isolation
     resolvedSelection?.baseMode,
   );
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
 
-  const showMobileCommentsBar = isMobile && threads.length > 0;
+  const showMobileCommentsBar = isMobile && mainView === 'diff' && threads.length > 0;
+  const unresolvedThreadsCount = threads.filter((thread) => !thread.resolvedAt).length;
   const commentsContextKey = useMemo(() => {
     if (!resolvedSelectionKey) {
       return null;
@@ -240,6 +259,11 @@ function App() {
   const hasBootstrappedComments =
     commentsContextKey !== null && commentsContextKey === bootstrappedCommentsKey;
   const bootstrappingCommentsKeyRef = useRef<string | null>(null);
+  const hasSelectedInitialMainViewRef = useRef(false);
+  const selectMainView = useCallback((view: MainView) => {
+    hasSelectedInitialMainViewRef.current = true;
+    setMainView(view);
+  }, []);
   const skipNextCommentSyncRef = useRef(false);
   // Last server comment version seen; echoed back as baseVersion so the server can detect concurrent writes.
   const serverCommentVersionRef = useRef<number | null>(null);
@@ -523,8 +547,11 @@ function App() {
         side: thread.position.side,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
+        acceptedAt: thread.acceptedAt,
+        resolvedAt: thread.resolvedAt,
         codeContent: thread.codeSnapshot?.content,
         isOutdated: isThreadOutdated(thread, fileLineIndexByPath.get(thread.filePath)),
+        isOrphaned: !fileLineIndexByPath.has(thread.filePath),
         messages: thread.messages,
       })),
     [threads, fileLineIndexByPath],
@@ -559,6 +586,7 @@ function App() {
   const handleCommentsChanged = useCallback(async () => {
     try {
       const serverThreads = await fetchServerThreads();
+      showExternalMessageNotification(findNewExternalMessages(threadsRef.current, serverThreads));
       skipNextCommentSyncRef.current = true;
       replaceThreads(serverThreads);
       if (commentsContextKey) {
@@ -607,7 +635,7 @@ function App() {
         }
       },
       onShowCommentsList: () => {
-        setIsCommentsListOpen(true);
+        selectMainView('comments');
       },
       onRefresh: () => {
         reload();
@@ -971,6 +999,17 @@ function App() {
     threads,
   ]);
 
+  useEffect(() => {
+    if (!hasBootstrappedComments || hasSelectedInitialMainViewRef.current) {
+      return;
+    }
+
+    hasSelectedInitialMainViewRef.current = true;
+    setMainView(
+      threads.some((thread) => !thread.acceptedAt && !thread.resolvedAt) ? 'comments' : 'diff',
+    );
+  }, [hasBootstrappedComments, threads]);
+
   // Trigger sparkle animation when all files are viewed
   useEffect(() => {
     if (diffData) {
@@ -1096,14 +1135,18 @@ function App() {
     [replyToThread],
   );
 
-  const handleNavigateToComment = (thread: CommentThread) => {
-    if (!diffData) return;
+  const handleNavigateToComment = useCallback(
+    (thread: CommentThread) => {
+      if (!diffData) return;
 
-    const position = findCommentPosition(thread, diffData.files);
-    if (position) {
+      const position = findCommentPosition(thread, diffData.files);
+      if (!position) return;
+
+      selectMainView('diff');
       setCursorPosition(position);
-    }
-  };
+    },
+    [diffData, selectMainView, setCursorPosition],
+  );
 
   const handleOpenInEditor = useCallback(
     async (filePath: string, lineNumber: number) => {
@@ -1260,32 +1303,52 @@ function App() {
             }`}
           >
             <div className={`flex flex-wrap items-center ${isMobile ? 'gap-2' : 'gap-3'}`}>
-              {!isMobile && (
-                <div className="flex bg-github-bg-tertiary border border-github-border rounded-md p-1">
-                  <button
-                    onClick={() => handleDiffModeChange('split')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                      diffMode === 'split'
-                        ? 'bg-github-bg-primary text-github-text-primary shadow-sm'
-                        : 'text-github-text-secondary hover:text-github-text-primary'
-                    }`}
-                  >
-                    <Columns size={14} />
-                    Split
-                  </button>
-                  <button
-                    onClick={() => handleDiffModeChange('unified')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                      diffMode === 'unified'
-                        ? 'bg-github-bg-primary text-github-text-primary shadow-sm'
-                        : 'text-github-text-secondary hover:text-github-text-primary'
-                    }`}
-                  >
-                    <AlignLeft size={14} />
-                    Unified
-                  </button>
-                </div>
-              )}
+              <div className="flex bg-github-bg-tertiary border border-github-border rounded-md p-1">
+                {!isMobile && (
+                  <>
+                    <button
+                      onClick={() => {
+                        selectMainView('diff');
+                        handleDiffModeChange('split');
+                      }}
+                      className={`px-3 py-1.5 text-xs font-medium rounded transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+                        mainView === 'diff' && diffMode === 'split'
+                          ? 'bg-github-bg-primary text-github-text-primary shadow-sm'
+                          : 'text-github-text-secondary hover:text-github-text-primary'
+                      }`}
+                    >
+                      <Columns size={14} />
+                      Split
+                    </button>
+                    <button
+                      onClick={() => {
+                        selectMainView('diff');
+                        handleDiffModeChange('unified');
+                      }}
+                      className={`px-3 py-1.5 text-xs font-medium rounded transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+                        mainView === 'diff' && diffMode === 'unified'
+                          ? 'bg-github-bg-primary text-github-text-primary shadow-sm'
+                          : 'text-github-text-secondary hover:text-github-text-primary'
+                      }`}
+                    >
+                      <AlignLeft size={14} />
+                      Unified
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => selectMainView('comments')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+                    mainView === 'comments'
+                      ? 'bg-github-bg-primary text-github-text-primary shadow-sm'
+                      : 'text-github-text-secondary hover:text-github-text-primary'
+                  }`}
+                >
+                  <List size={14} />
+                  Comments ({threads.length})
+                </button>
+              </div>
               <Checkbox
                 checked={ignoreWhitespace}
                 onChange={setIgnoreWhitespace}
@@ -1307,13 +1370,14 @@ function App() {
               }`}
             >
               {!isMobile && threads.length > 0 && (
-                <CommentsDropdown
-                  commentsCount={threads.length}
-                  isCopiedAll={isCopiedAll}
-                  onCopyAll={handleCopyAllComments}
-                  onDeleteAll={clearAllComments}
-                  onViewAll={() => setIsCommentsListOpen(true)}
-                />
+                <div className="flex items-center gap-2">
+                  <CommentsDropdown
+                    commentsCount={unresolvedThreadsCount}
+                    isCopiedAll={isCopiedAll}
+                    onCopyAll={handleCopyAllComments}
+                    onDeleteAll={clearAllComments}
+                  />
+                </div>
               )}
               <div className="flex flex-col gap-1 items-center">
                 <div className="text-xs relative">
@@ -1388,7 +1452,31 @@ function App() {
           />
         )}
 
-        {isMobile && isFileTreeOpen && (
+        {mainView === null && (
+          <main className="flex flex-1 items-center justify-center text-sm text-github-text-secondary">
+            Loading comments…
+          </main>
+        )}
+
+        {mainView === 'comments' && (
+          <CommentsView
+            comments={normalizedThreads}
+            showAuthorBadges={showAuthorBadges}
+            reviewUrl={diffData.reviewUrl}
+            files={diffData.files}
+            onRemoveThread={removeThread}
+            onDeleteThread={deleteThread}
+            onThreadStatusChange={setThreadStatus}
+            onNavigateToCode={handleNavigateToComment}
+            onGenerateThreadPrompt={handleGenerateThreadPrompt}
+            onReplyToThread={handleReplyToThread}
+            onRemoveMessage={removeMessage}
+            onUpdateMessage={updateMessage}
+            syntaxTheme={settings.syntaxTheme}
+          />
+        )}
+
+        {mainView === 'diff' && isMobile && isFileTreeOpen && (
           <button
             type="button"
             aria-label="Close file tree"
@@ -1397,7 +1485,9 @@ function App() {
           />
         )}
 
-        <div className="flex flex-1 overflow-hidden relative">
+        <div
+          className={`flex flex-1 overflow-hidden relative ${mainView !== 'diff' ? 'hidden' : ''}`}
+        >
           <div
             className={`relative overflow-hidden ${!isDragging ? '!transition-all !duration-300 !ease-in-out' : ''}`}
             style={{
@@ -1503,6 +1593,7 @@ function App() {
                       file={file}
                       threads={fileThreads}
                       showAuthorBadges={showAuthorBadges}
+                      reviewUrl={diffData.reviewUrl}
                       diffMode={diffMode}
                       reviewedFiles={viewedFiles}
                       isChangedSinceViewed={changedSinceViewedFiles.has(file.path)}
@@ -1564,12 +1655,19 @@ function App() {
 
         {showMobileCommentsBar && (
           <div className="fixed bottom-0 left-0 right-0 z-20 bg-github-bg-secondary border-t border-github-border px-4 py-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => selectMainView('comments')}
+              className="mr-2 flex items-center gap-1.5 rounded border border-github-border bg-github-bg-tertiary px-3 py-1.5 text-xs text-github-text-primary"
+            >
+              <List size={12} />
+              Threads ({threads.length})
+            </button>
             <CommentsDropdown
-              commentsCount={threads.length}
+              commentsCount={unresolvedThreadsCount}
               isCopiedAll={isCopiedAll}
               onCopyAll={handleCopyAllComments}
               onDeleteAll={clearAllComments}
-              onViewAll={() => setIsCommentsListOpen(true)}
               direction="up"
               compact
             />
@@ -1586,20 +1684,6 @@ function App() {
         )}
 
         <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
-
-        <CommentsListModal
-          isOpen={isCommentsListOpen}
-          onClose={() => setIsCommentsListOpen(false)}
-          onNavigate={handleNavigateToComment}
-          comments={normalizedThreads}
-          showAuthorBadges={showAuthorBadges}
-          onRemoveThread={removeThread}
-          onGenerateThreadPrompt={handleGenerateThreadPrompt}
-          onReplyToThread={handleReplyToThread}
-          onRemoveMessage={removeMessage}
-          onUpdateMessage={updateMessage}
-          syntaxTheme={settings.syntaxTheme}
-        />
       </div>
     </WordHighlightProvider>
   );

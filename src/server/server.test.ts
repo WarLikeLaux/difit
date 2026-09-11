@@ -1018,7 +1018,7 @@ describe('Server Integration Tests', () => {
       expect(threads).toHaveLength(1);
     });
 
-    it('DELETE /api/comments/:threadId removes the thread and bumps the version', async () => {
+    it('DELETE /api/comments/:threadId resolves the thread and bumps the version', async () => {
       await fetch(`http://localhost:${port}/api/comment-imports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1051,7 +1051,12 @@ describe('Server Integration Tests', () => {
 
       const afterResponse = await fetch(`http://localhost:${port}/api/comments-json`);
       const after = (await afterResponse.json()) as any;
-      expect(after.threads.some((t: any) => t.id === 'delete-me')).toBe(false);
+      const resolvedThread = after.threads.find((t: any) => t.id === 'delete-me');
+      expect(resolvedThread).toBeDefined();
+      expect(resolvedThread.resolvedAt).toEqual(expect.any(String));
+
+      const agentOutputResponse = await fetch(`http://localhost:${port}/api/comments-output`);
+      expect(await agentOutputResponse.text()).not.toContain('Thread to delete');
     });
 
     it('DELETE /api/comments/:threadId returns 404 for unknown thread', async () => {
@@ -1063,6 +1068,47 @@ describe('Server Integration Tests', () => {
       const data = (await response.json()) as any;
       expect(data).toHaveProperty('error');
       expect(data.error).toContain('does-not-exist');
+    });
+
+    it('PATCH /api/comments/:threadId/status moves a thread between workflow states', async () => {
+      await fetch(`http://localhost:${port}/api/comment-imports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([
+          {
+            type: 'thread',
+            id: 'status-thread',
+            filePath: 'src/status-test.ts',
+            position: { side: 'new', line: 3 },
+            body: 'Thread with workflow status',
+          },
+        ]),
+      });
+
+      const acceptedResponse = await fetch(
+        `http://localhost:${port}/api/comments/status-thread/status`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'accepted' }),
+        },
+      );
+      expect(acceptedResponse.ok).toBe(true);
+
+      let data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
+      let thread = data.threads.find((item: any) => item.id === 'status-thread');
+      expect(thread.acceptedAt).toEqual(expect.any(String));
+      expect(thread.resolvedAt).toBeUndefined();
+
+      await fetch(`http://localhost:${port}/api/comments/status-thread/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'open' }),
+      });
+      data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
+      thread = data.threads.find((item: any) => item.id === 'status-thread');
+      expect(thread.acceptedAt).toBeUndefined();
+      expect(thread.resolvedAt).toBeUndefined();
     });
 
     describe('user settings API', () => {
@@ -1398,7 +1444,7 @@ describe('Server Integration Tests', () => {
 
       expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:*');
       expect(response.headers.get('Access-Control-Allow-Methods')).toBe(
-        'GET, POST, PUT, DELETE, OPTIONS',
+        'GET, POST, PUT, PATCH, DELETE, OPTIONS',
       );
       expect(response.headers.get('Access-Control-Allow-Headers')).toBe(
         'Origin, X-Requested-With, Content-Type, Accept',

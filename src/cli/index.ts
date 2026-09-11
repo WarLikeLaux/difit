@@ -21,6 +21,7 @@ import {
 } from './utils.js';
 import { createCommentCommand } from './comment.js';
 import { getPrPatch, getPrCommentImports } from './github.js';
+import { detectGitLabMergeRequestUrl, normalizeGitLabMergeRequestUrl } from './gitlab.js';
 import {
   BACKGROUND_CHILD_ENV,
   emitBackgroundHandshake,
@@ -84,6 +85,7 @@ interface CliOptions {
   open: boolean;
   comment: string[];
   pr?: string;
+  gitlabMr?: string;
   clean?: boolean;
   includeUntracked?: boolean;
   keepAlive?: boolean;
@@ -119,6 +121,7 @@ program
     [],
   )
   .option('--pr <url>', 'GitHub PR URL to review (e.g., https://github.com/owner/repo/pull/123)')
+  .option('--gitlab-mr <url>', 'GitLab merge request URL for file and line links')
   .option('--clean', 'start with a clean slate by clearing all existing comments')
   .option('--include-untracked', 'automatically include untracked files in diff')
   .option('--keep-alive', 'keep server running even after browser disconnects')
@@ -265,6 +268,17 @@ program
 
       const selection = resolveDiffSelection(commitish, compareWith, options.mergeBase);
 
+      const explicitGitLabMergeRequestUrl = options.gitlabMr
+        ? normalizeGitLabMergeRequestUrl(options.gitlabMr)
+        : undefined;
+      if (options.gitlabMr && !explicitGitLabMergeRequestUrl) {
+        console.error('Error: --gitlab-mr must be a GitLab merge request URL');
+        process.exit(1);
+      }
+      const reviewUrl =
+        explicitGitLabMergeRequestUrl ??
+        detectGitLabMergeRequestUrl(repoPath, selection.targetCommitish);
+
       if (options.mergeBase && isSpecialArg(selection.baseCommitish)) {
         console.error(
           `Error: --merge-base requires a commit-ish base, but resolved base was "${selection.baseCommitish}"`,
@@ -297,6 +311,7 @@ program
         contextLines: options.context,
         diffMode: determineDiffMode(selection, compareWith),
         repoPath,
+        reviewUrl,
         ...(commentImports.length > 0 ? { commentImports } : {}),
       });
 

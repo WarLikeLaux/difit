@@ -36,9 +36,8 @@ export function isThreadOutdated(
   index: FileLineIndex | undefined,
 ): boolean {
   const snapshot = thread.codeSnapshot?.content;
-  if (snapshot === undefined) return false;
-
   if (!index) return true;
+  if (snapshot === undefined) return false;
 
   const sideIndex = thread.position.side === 'old' ? index.old : index.new;
   const range =

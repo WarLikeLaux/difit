@@ -95,6 +95,9 @@ export function SettingsModal({ isOpen, onClose, settings, onSettingsChange }: S
     formatAutoViewedPatterns(settings.autoViewedPatterns),
   );
   const [activeSection, setActiveSection] = useState<SettingsSection>('appearance');
+  const [notificationPermission, setNotificationPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >(() => (typeof Notification === 'undefined' ? 'unsupported' : Notification.permission));
   const { enableScope, disableScope } = useHotkeysContext();
 
   // Manage scopes when modal opens/closes
@@ -149,6 +152,11 @@ export function SettingsModal({ isOpen, onClose, settings, onSettingsChange }: S
     }
 
     onSettingsChange(newSettings);
+  };
+
+  const enableNotifications = async () => {
+    if (typeof Notification === 'undefined') return;
+    setNotificationPermission(await Notification.requestPermission());
   };
 
   const handleReset = () => {
@@ -345,6 +353,29 @@ export function SettingsModal({ isOpen, onClose, settings, onSettingsChange }: S
 
             {activeSection === 'system' && (
               <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-github-text-primary mb-2">
+                    Agent Reply Notifications
+                  </label>
+                  <p className="text-sm text-github-text-secondary mb-2">
+                    Show a desktop notification whenever an agent adds a comment.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void enableNotifications()}
+                    disabled={notificationPermission !== 'default'}
+                    className="rounded border border-github-border bg-github-bg-tertiary px-3 py-2 text-sm text-github-text-primary transition-colors enabled:hover:bg-github-bg-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {notificationPermission === 'granted'
+                      ? 'Notifications enabled'
+                      : notificationPermission === 'denied'
+                        ? 'Notifications blocked by browser'
+                        : notificationPermission === 'unsupported'
+                          ? 'Notifications are not supported'
+                          : 'Enable notifications'}
+                  </button>
+                </div>
+
                 <div>
                   <label
                     htmlFor="auto-viewed-patterns"

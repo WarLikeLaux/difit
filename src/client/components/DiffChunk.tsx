@@ -11,6 +11,7 @@ import {
 } from '../../types/diff';
 import { DEFAULT_DIFF_VIEW_MODE } from '../../utils/diffMode';
 import { type CursorPosition } from '../hooks/keyboardNavigation';
+import { getGitLabLineFragment } from '../utils/gitlabLinks';
 import {
   computeWordLevelDiff,
   shouldComputeWordDiff,
@@ -28,6 +29,7 @@ interface DiffChunkProps {
   chunkIndex: number;
   threads: CommentThread[];
   showAuthorBadges?: boolean;
+  reviewUrl?: string;
   onAddComment: (
     line: LineNumber,
     body: string,
@@ -64,6 +66,7 @@ export const DiffChunk = memo(function DiffChunk({
   chunkIndex,
   threads,
   showAuthorBadges = false,
+  reviewUrl,
   onAddComment,
   onGenerateThreadPrompt,
   onRemoveThread,
@@ -393,6 +396,7 @@ export const DiffChunk = memo(function DiffChunk({
         chunkIndex={chunkIndex}
         threads={threads}
         showAuthorBadges={showAuthorBadges}
+        reviewUrl={reviewUrl}
         onAddComment={onAddComment}
         onGenerateThreadPrompt={onGenerateThreadPrompt}
         onRemoveThread={onRemoveThread}
@@ -524,6 +528,8 @@ export const DiffChunk = memo(function DiffChunk({
                             <CommentThreadCard
                               thread={thread}
                               showAuthorBadges={showAuthorBadges}
+                              reviewUrl={reviewUrl}
+                              gitLabLine={getGitLabLineFragment(line)}
                               onGeneratePrompt={onGenerateThreadPrompt}
                               onRemoveThread={onRemoveThread}
                               onReplyToThread={onReplyToThread}

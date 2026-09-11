@@ -635,7 +635,7 @@ describe('App Component - Comment sync', () => {
     addEventListenerSpy.mockRestore();
   });
 
-  it('shows author badges in the comments modal when the diff has multiple authors', async () => {
+  it('shows author badges in the comments view when the diff has multiple authors', async () => {
     mockComments = [
       createMockThread({ id: 'test-1', filePath: 'test.ts', line: 10, body: 'User comment' }),
       createMockThread({
@@ -662,11 +662,48 @@ describe('App Component - Comment sync', () => {
 
     renderApp();
 
-    fireEvent.click(await screen.findByTitle('More options'));
-    fireEvent.click(await screen.findByText('View All Comments'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Comments (2)' }));
 
     expect(await screen.findByText('User')).toBeInTheDocument();
     expect(screen.getByText('Reviewer')).toBeInTheDocument();
+  });
+
+  it('opens the comments view by default when an open thread exists', async () => {
+    mockComments = [
+      createMockThread({ id: 'test-1', filePath: 'test.ts', line: 10, body: 'Open comment' }),
+    ];
+    mockFetch(mockDiffResponse);
+
+    renderApp();
+
+    expect(await screen.findByRole('heading', { name: 'Comments' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Comments (1)' })).toHaveClass(
+      'bg-github-bg-primary',
+    );
+  });
+
+  it('keeps the diff view open when all threads are resolved', async () => {
+    mockComments = [
+      {
+        ...createMockThread({
+          id: 'test-1',
+          filePath: 'test.ts',
+          line: 10,
+          body: 'Resolved comment',
+        }),
+        resolvedAt: '2026-09-11T00:00:00.000Z',
+      },
+    ];
+    mockFetch(mockDiffResponse);
+
+    renderApp();
+
+    await screen.findByRole('button', { name: 'Comments (1)' });
+    await waitFor(() => expect(mockReplaceThreads).toHaveBeenCalled());
+    expect(screen.queryByRole('heading', { name: 'Comments' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Comments (1)' })).not.toHaveClass(
+      'bg-github-bg-primary',
+    );
   });
 });
 

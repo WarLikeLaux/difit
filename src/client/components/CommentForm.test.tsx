@@ -17,4 +17,17 @@ describe('CommentForm', () => {
     expect(onCancel).toHaveBeenCalledOnce();
     expect(screen.getByRole('textbox')).toHaveValue('');
   });
+
+  it('submits on Enter and keeps Shift+Enter for a new line', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<CommentForm onSubmit={onSubmit} onCancel={vi.fn()} />);
+
+    const textbox = screen.getByRole('textbox');
+    fireEvent.change(textbox, { target: { value: 'First line' } });
+    fireEvent.keyDown(textbox, { key: 'Enter', shiftKey: true });
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(textbox, { key: 'Enter' });
+    expect(onSubmit).toHaveBeenCalledWith('First line');
+  });
 });

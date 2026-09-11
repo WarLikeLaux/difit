@@ -1,9 +1,25 @@
-import { Check, ChevronDown, ChevronRight, Copy, Edit2, MessageSquare, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Edit2,
+  ExternalLink,
+  FileCode2,
+  MessageSquare,
+  Navigation,
+  Trash2,
+} from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
-import { type CommentThread, type DiffCommentMessage } from '../../types/diff';
+import {
+  type CommentThread,
+  type CommentThreadStatus,
+  type DiffCommentMessage,
+} from '../../types/diff';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { buildGitLabDiffLineUrl } from '../utils/gitlabLinks';
 
 import { CommentBodyRenderer } from './CommentBodyRenderer';
 import { CommentForm } from './CommentForm';
@@ -20,6 +36,7 @@ interface ThreadMessageItemProps {
   onResolveOrDelete: () => void;
   actionLabel: string;
   confirmPrompt?: string;
+  hideAction?: boolean;
   onClick?: (e: React.MouseEvent) => void;
 }
 
@@ -34,14 +51,16 @@ function ThreadMessageItem({
   onResolveOrDelete,
   actionLabel,
   confirmPrompt,
+  hideAction = false,
   onClick,
 }: ThreadMessageItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const confirmContainerRef = useRef<HTMLDivElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
-  const showAuthorHeader = showAuthorBadge && Boolean(message.author);
+  const showAuthorHeader = showAuthorBadge;
   const isUserAuthoredMessage = message.author?.trim() === 'User';
+  const authorLabel = message.author?.trim() || 'Agent';
 
   useClickOutside(confirmContainerRef, () => setIsConfirming(false), isConfirming);
 
@@ -89,7 +108,7 @@ function ThreadMessageItem({
             {showAuthorHeader && (
               <div className="mb-2 flex min-w-0 items-center gap-2 pr-2 text-xs text-github-text-secondary">
                 <span className="inline-flex items-center rounded-full border border-github-border bg-github-bg-primary px-2 py-0.5 text-[11px] font-medium text-github-text-primary">
-                  {message.author}
+                  {authorLabel}
                 </span>
               </div>
             )}
@@ -101,7 +120,8 @@ function ThreadMessageItem({
               syntaxTheme={syntaxTheme}
             />
           </div>
-          {(isRootMessage || isUserAuthoredMessage) &&
+          {!hideAction &&
+            (isRootMessage || isUserAuthoredMessage) &&
             (isConfirming ? (
               <div
                 ref={confirmContainerRef}
@@ -191,8 +211,15 @@ interface CommentThreadCardProps {
   thread: CommentThread;
   showAuthorBadges?: boolean;
   confirmRootAction?: boolean;
+  reviewUrl?: string;
+  gitLabLine?: string;
   onGeneratePrompt: (thread: CommentThread) => string;
   onRemoveThread: (threadId: string) => void;
+  onDeleteThread?: () => void;
+  onThreadStatusChange?: (status: CommentThreadStatus) => void;
+  onNavigateToCode?: () => void;
+  collapseRequest?: { collapsed: boolean; version: number };
+  hideReplies?: boolean;
   onReplyToThread: (threadId: string, body: string) => Promise<void>;
   onRemoveMessage: (threadId: string, messageId: string) => void;
   onUpdateMessage: (threadId: string, messageId: string, newBody: string) => void;
@@ -204,8 +231,15 @@ export function CommentThreadCard({
   thread,
   showAuthorBadges = false,
   confirmRootAction = true,
+  reviewUrl,
+  gitLabLine,
   onGeneratePrompt,
   onRemoveThread,
+  onDeleteThread,
+  onThreadStatusChange,
+  onNavigateToCode,
+  collapseRequest,
+  hideReplies = false,
   onReplyToThread,
   onRemoveMessage,
   onUpdateMessage,
@@ -213,11 +247,49 @@ export function CommentThreadCard({
   syntaxTheme,
 }: CommentThreadCardProps) {
   const [isCopied, setIsCopied] = useState(false);
+  const [isFileCopied, setIsFileCopied] = useState(false);
+  const [reviewLineUrl, setReviewLineUrl] = useState<string>();
   const [isReplying, setIsReplying] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(Boolean(thread.resolvedAt));
+  const firstLine = Array.isArray(thread.line) ? thread.line[0] : thread.line;
+  const threadStatus: CommentThreadStatus = thread.resolvedAt
+    ? 'resolved'
+    : thread.acceptedAt
+      ? 'accepted'
+      : 'open';
+
+  useEffect(() => {
+    let active = true;
+    if (!reviewUrl || !gitLabLine) {
+      setReviewLineUrl(undefined);
+      return;
+    }
+
+    void buildGitLabDiffLineUrl(reviewUrl, thread.file, gitLabLine)
+      .then((url) => {
+        if (active) setReviewLineUrl(url);
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to build GitLab line URL:', error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [gitLabLine, reviewUrl, thread.file]);
   const lineLabel = Array.isArray(thread.line)
     ? `${thread.line[0]}-${thread.line[1]}`
     : thread.line;
+
+  useEffect(() => {
+    setIsCollapsed(Boolean(thread.resolvedAt));
+  }, [thread.resolvedAt]);
+
+  useEffect(() => {
+    if (collapseRequest) {
+      setIsCollapsed(collapseRequest.collapsed);
+    }
+  }, [collapseRequest]);
 
   const toggleCollapsed = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -236,18 +308,33 @@ export function CommentThreadCard({
     }
   };
 
+  const handleCopyFile = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await copyTextToClipboard(`${thread.file}:${firstLine}`);
+      setIsFileCopied(true);
+      setTimeout(() => setIsFileCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy file and line:', error);
+    }
+  };
+
   const rootMessage = thread.messages[0];
   if (!rootMessage) return null;
 
   return (
     <div
       id={`comment-thread-${thread.id}`}
-      className={`rounded-md border border-yellow-600/50 border-l-4 border-l-yellow-400 bg-github-bg-tertiary p-3 shadow-sm transition-all ${
-        onClick ? 'cursor-pointer hover:shadow-md' : ''
-      }`}
+      className={`rounded-md border border-l-4 bg-github-bg-tertiary p-3 shadow-sm transition-all ${
+        thread.resolvedAt
+          ? 'border-github-border border-l-github-text-muted opacity-75'
+          : thread.acceptedAt
+            ? 'border-blue-600/50 border-l-blue-400'
+            : 'border-yellow-600/50 border-l-yellow-400'
+      } ${onClick ? 'cursor-pointer hover:shadow-md' : ''}`}
       onClick={onClick}
     >
-      <div className={`flex items-center justify-between gap-3 ${isCollapsed ? '' : 'mb-3'}`}>
+      <div className={isCollapsed ? '' : 'mb-3'}>
         <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-github-text-secondary">
           <button
             type="button"
@@ -268,13 +355,38 @@ export function CommentThreadCard({
           >
             {thread.file}:{lineLabel}
           </span>
-          {thread.isOutdated && (
+          {thread.isOutdated && !thread.isOrphaned && (
             <span
               className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
               title="Code has changed since this comment was made"
               aria-label="Outdated comment"
             >
               Outdated
+            </span>
+          )}
+          {thread.isOrphaned && (
+            <span
+              className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
+              title="The file is no longer part of this diff"
+              aria-label="File not in diff"
+            >
+              Not in diff
+            </span>
+          )}
+          {thread.resolvedAt && (
+            <span
+              className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
+              aria-label="Resolved thread"
+            >
+              Resolved
+            </span>
+          )}
+          {thread.acceptedAt && !thread.resolvedAt && (
+            <span
+              className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-500/60 px-2 text-[10px] font-medium text-blue-400"
+              aria-label="Accepted thread"
+            >
+              Accepted
             </span>
           )}
           {isCollapsed && (
@@ -298,7 +410,60 @@ export function CommentThreadCard({
           )}
         </div>
         {!isCollapsed && (
-          <div className="flex items-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+            {onThreadStatusChange && (
+              <select
+                aria-label="Thread status"
+                value={threadStatus}
+                onChange={(event) =>
+                  onThreadStatusChange(event.target.value as CommentThreadStatus)
+                }
+                onClick={(event) => event.stopPropagation()}
+                className="rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary"
+              >
+                <option value="open">Open</option>
+                <option value="accepted">Accepted</option>
+                <option value="resolved">Resolved</option>
+              </select>
+            )}
+            {onNavigateToCode && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onNavigateToCode();
+                }}
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+                title="Show this thread in the diff"
+              >
+                <Navigation size={12} />
+                Go to Code
+              </button>
+            )}
+            {reviewLineUrl && (
+              <a
+                href={reviewLineUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+                title="Open this line in GitLab"
+              >
+                <ExternalLink size={12} />
+                Open Link
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={handleCopyFile}
+              className="whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+              title={`Copy ${thread.file}:${firstLine}`}
+            >
+              <span className="inline-flex items-center gap-1">
+                <FileCode2 size={12} />
+                {isFileCopied ? 'Copied!' : 'Copy File'}
+              </span>
+            </button>
             <button
               type="button"
               onClick={handleCopyThread}
@@ -315,6 +480,20 @@ export function CommentThreadCard({
                 {isCopied ? 'Copied!' : 'Copy Prompt'}
               </span>
             </button>
+            {onDeleteThread && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteThread();
+                }}
+                className="rounded border border-github-border bg-github-bg-tertiary p-1.5 text-github-danger transition-all hover:bg-github-bg-primary"
+                title="Delete thread"
+                aria-label="Delete thread"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -332,23 +511,31 @@ export function CommentThreadCard({
             onResolveOrDelete={() => onRemoveThread(thread.id)}
             actionLabel="Resolve thread"
             confirmPrompt={confirmRootAction ? 'Resolve?' : undefined}
+            hideAction={Boolean(thread.resolvedAt)}
           />
 
-          {thread.messages.slice(1).map((message) => (
-            <div key={message.id} className="ml-4 border-l border-github-border pl-3">
-              <ThreadMessageItem
-                message={message}
-                showAuthorBadge={showAuthorBadges}
-                syntaxTheme={syntaxTheme}
-                filename={thread.file}
-                originalCode={thread.codeContent}
-                onUpdate={(newBody) => onUpdateMessage(thread.id, message.id, newBody)}
-                onResolveOrDelete={() => onRemoveMessage(thread.id, message.id)}
-                actionLabel="Delete reply"
-                confirmPrompt="Delete?"
-              />
+          {!hideReplies &&
+            thread.messages.slice(1).map((message) => (
+              <div key={message.id} className="ml-4 border-l border-github-border pl-3">
+                <ThreadMessageItem
+                  message={message}
+                  showAuthorBadge={showAuthorBadges}
+                  syntaxTheme={syntaxTheme}
+                  filename={thread.file}
+                  originalCode={thread.codeContent}
+                  onUpdate={(newBody) => onUpdateMessage(thread.id, message.id, newBody)}
+                  onResolveOrDelete={() => onRemoveMessage(thread.id, message.id)}
+                  actionLabel="Delete reply"
+                  confirmPrompt="Delete?"
+                />
+              </div>
+            ))}
+
+          {hideReplies && thread.messages.length > 1 && (
+            <div className="ml-4 text-xs text-github-text-muted">
+              {thread.messages.length - 1} replies hidden
             </div>
-          ))}
+          )}
 
           <div
             className="ml-4 border-l border-github-border pl-3"

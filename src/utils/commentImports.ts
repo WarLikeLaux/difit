@@ -330,6 +330,8 @@ function cloneThread(thread: DiffCommentThread): DiffCommentThread {
     filePath: thread.filePath,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
+    acceptedAt: thread.acceptedAt,
+    resolvedAt: thread.resolvedAt,
     position: clonePosition(thread.position),
     codeSnapshot: cloneCodeSnapshot(thread.codeSnapshot),
     messages: thread.messages.map(cloneMessage),
@@ -412,6 +414,7 @@ function mergeThread(
     (latest, message) => maxIsoTimestamp(latest, message.updatedAt),
     maxIsoTimestamp(existingThread.updatedAt, incomingThread.updatedAt),
   );
+  const hasNewReply = orderedMessages.length > existingThread.messages.length;
 
   return {
     ...cloneThread(existingThread),
@@ -420,6 +423,8 @@ function mergeThread(
         ? existingThread.createdAt
         : incomingThread.createdAt,
     updatedAt,
+    acceptedAt: hasNewReply ? undefined : (incomingThread.acceptedAt ?? existingThread.acceptedAt),
+    resolvedAt: hasNewReply ? undefined : (incomingThread.resolvedAt ?? existingThread.resolvedAt),
     position: clonePosition(existingThread.position),
     codeSnapshot: cloneCodeSnapshot(incomingThread.codeSnapshot ?? existingThread.codeSnapshot),
     messages: orderedMessages,
@@ -526,6 +531,8 @@ export function mergeCommentImports(
     const importedReply = createImportedReply(commentImport, now);
     targetThread.messages = [...targetThread.messages, importedReply];
     targetThread.updatedAt = maxIsoTimestamp(targetThread.updatedAt, importedReply.updatedAt);
+    targetThread.acceptedAt = undefined;
+    targetThread.resolvedAt = undefined;
   }
 
   return { threads, warnings };

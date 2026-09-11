@@ -20,6 +20,10 @@ vi.mock('./github.js', () => ({
   getPrPatch: vi.fn(),
   getPrCommentImports: vi.fn(),
 }));
+vi.mock('./gitlab.js', () => ({
+  detectGitLabMergeRequestUrl: vi.fn(),
+  normalizeGitLabMergeRequestUrl: vi.fn((value: string) => value),
+}));
 
 const { simpleGit } = await import('simple-git');
 const { startServer } = await import('../server/server.js');

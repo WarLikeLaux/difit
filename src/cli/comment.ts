@@ -11,6 +11,92 @@ interface CommentImportResponse {
   warnings?: string[];
 }
 
+interface CommentThreadsResponse {
+  version?: number;
+  threads?: Array<{ resolvedAt?: string }>;
+}
+
+type CommentOutputFormat = 'text' | 'json';
+type MutableCommentStatus = 'open' | 'accepted';
+
+async function fetchCommentOutput(port: number, format: CommentOutputFormat): Promise<string> {
+  const endpoint = format === 'json' ? '/api/comments-json' : '/api/comments-output';
+  const response = await fetch(`http://localhost:${port}${endpoint}`);
+
+  if (!response.ok) {
+    throw new Error('Failed to retrieve comments');
+  }
+
+  if (format === 'text') {
+    return (await response.text()).trim();
+  }
+
+  const data = (await response.json()) as CommentThreadsResponse;
+  return JSON.stringify({
+    ...data,
+    threads: data.threads?.filter((thread) => !thread.resolvedAt) ?? [],
+  });
+}
+
+async function watchCommentOutput(port: number, format: CommentOutputFormat): Promise<void> {
+  let previousOutput = await fetchCommentOutput(port, format);
+  if (previousOutput) {
+    console.log(previousOutput);
+  }
+
+  while (true) {
+    const response = await fetch(`http://localhost:${port}/api/watch`, {
+      headers: { Accept: 'text/event-stream' },
+    });
+    if (!response.ok || !response.body) {
+      throw new Error('Failed to watch comments');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      let separatorIndex = buffer.indexOf('\n\n');
+      while (separatorIndex >= 0) {
+        const block = buffer.slice(0, separatorIndex);
+        buffer = buffer.slice(separatorIndex + 2);
+        const data = block
+          .split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n');
+
+        if (data) {
+          let event: { type?: string };
+          try {
+            event = JSON.parse(data) as { type?: string };
+          } catch {
+            separatorIndex = buffer.indexOf('\n\n');
+            continue;
+          }
+
+          if (event.type === 'commentsChanged') {
+            const nextOutput = await fetchCommentOutput(port, format);
+            if (nextOutput !== previousOutput) {
+              previousOutput = nextOutput;
+              if (nextOutput) console.log(nextOutput);
+            }
+          }
+        }
+
+        separatorIndex = buffer.indexOf('\n\n');
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
 function handleCommandError(error: unknown, port: number): never {
   if (error instanceof TypeError && error.message.includes('fetch failed')) {
     console.error(`Error: Cannot connect to difit server on port ${port}. Is the server running?`);
@@ -35,6 +121,57 @@ async function parseCommentAddInput(json?: string): Promise<string> {
   }
 
   return stdin;
+}
+
+function addStatusCommand(
+  comment: Command,
+  name: string,
+  status: MutableCommentStatus,
+  description: string,
+): void {
+  comment
+    .command(name)
+    .description(description)
+    .argument('<threadIds...>', 'thread IDs to update')
+    .requiredOption('--port <port>', 'port of the running difit server', parseInt)
+    .action(async (threadIds: string[], opts: { port: number }) => {
+      try {
+        const results = await Promise.all(
+          threadIds.map(async (threadId) => {
+            const response = await fetch(
+              `http://localhost:${opts.port}/api/comments/${encodeURIComponent(threadId)}/status`,
+              {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status }),
+              },
+            );
+
+            return { threadId, ok: response.ok, notFound: response.status === 404 };
+          }),
+        );
+        const updated = results.filter((result) => result.ok).map((result) => result.threadId);
+        const notFound = results
+          .filter((result) => result.notFound)
+          .map((result) => result.threadId);
+        const failed = results
+          .filter((result) => !result.ok && !result.notFound)
+          .map((result) => result.threadId);
+
+        console.log(
+          JSON.stringify({
+            success: notFound.length === 0 && failed.length === 0,
+            status,
+            updated,
+            notFound,
+            failed,
+          }),
+        );
+        if (notFound.length > 0 || failed.length > 0) process.exit(1);
+      } catch (error) {
+        handleCommandError(error, opts.port);
+      }
+    });
 }
 
 export function createCommentCommand(): Command {
@@ -89,23 +226,25 @@ export function createCommentCommand(): Command {
     )
     .action(async (opts: { port: number; format: string }) => {
       try {
-        const endpoint = opts.format === 'json' ? '/api/comments-json' : '/api/comments-output';
-        const response = await fetch(`http://localhost:${opts.port}${endpoint}`);
-
-        if (!response.ok) {
-          console.error('Error: Failed to retrieve comments');
-          process.exit(1);
+        const output = await fetchCommentOutput(opts.port, opts.format as CommentOutputFormat);
+        if (output) {
+          console.log(output);
         }
+      } catch (error) {
+        handleCommandError(error, opts.port);
+      }
+    });
 
-        if (opts.format === 'json') {
-          const data: unknown = await response.json();
-          console.log(JSON.stringify(data));
-        } else {
-          const text = await response.text();
-          if (text.trim()) {
-            console.log(text);
-          }
-        }
+  comment
+    .command('watch')
+    .description('Stream comment updates from a running difit server')
+    .requiredOption('--port <port>', 'port of the running difit server', parseInt)
+    .addOption(
+      new Option('--format <format>', 'output format').choices(['text', 'json']).default('json'),
+    )
+    .action(async (opts: { port: number; format: string }) => {
+      try {
+        await watchCommentOutput(opts.port, opts.format as CommentOutputFormat);
       } catch (error) {
         handleCommandError(error, opts.port);
       }
@@ -114,7 +253,7 @@ export function createCommentCommand(): Command {
   comment
     .command('resolve')
     .alias('remove')
-    .description('Resolve (remove) comment threads on a running difit server')
+    .description('Mark comment threads as resolved on a running difit server')
     .argument('<threadIds...>', 'thread IDs to resolve')
     .requiredOption('--port <port>', 'port of the running difit server', parseInt)
     .action(async (threadIds: string[], opts: { port: number }) => {
@@ -177,6 +316,9 @@ export function createCommentCommand(): Command {
         handleCommandError(error, opts.port);
       }
     });
+
+  addStatusCommand(comment, 'accept', 'accepted', 'Mark comment threads as accepted');
+  addStatusCommand(comment, 'reopen', 'open', 'Move comment threads back to open');
 
   return comment;
 }

@@ -3,8 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CommentThread } from '../../types/diff';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 import { CommentThreadCard } from './CommentThreadCard';
+
+vi.mock('../utils/clipboard', () => ({
+  copyTextToClipboard: vi.fn().mockResolvedValue(undefined),
+}));
 
 const mockThread: CommentThread = {
   id: 'thread-1',
@@ -33,6 +38,74 @@ const mockThread: CommentThread = {
 };
 
 describe('CommentThreadCard', () => {
+  it('shows missing authors as Agent when author badges are enabled', () => {
+    render(
+      <CommentThreadCard
+        thread={{
+          ...mockThread,
+          messages: [
+            { ...mockThread.messages[0]!, author: undefined },
+            { ...mockThread.messages[1]!, author: 'User' },
+          ],
+        }}
+        showAuthorBadges
+        onGeneratePrompt={() => 'thread prompt'}
+        onRemoveThread={vi.fn()}
+        onReplyToThread={vi.fn().mockResolvedValue(undefined)}
+        onRemoveMessage={vi.fn()}
+        onUpdateMessage={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Agent')).toBeInTheDocument();
+    expect(screen.getByText('User')).toBeInTheDocument();
+  });
+
+  it('copies the file path with its first line', async () => {
+    const user = userEvent.setup();
+    vi.mocked(copyTextToClipboard).mockClear();
+
+    render(
+      <CommentThreadCard
+        thread={{ ...mockThread, line: [80, 83] }}
+        onGeneratePrompt={() => 'thread prompt'}
+        onRemoveThread={vi.fn()}
+        onReplyToThread={vi.fn().mockResolvedValue(undefined)}
+        onRemoveMessage={vi.fn()}
+        onUpdateMessage={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Copy File' }));
+
+    expect(copyTextToClipboard).toHaveBeenCalledWith(
+      'src/client/components/CommentThreadCard.tsx:80',
+    );
+  });
+
+  it('links a thread to the matching GitLab diff line in a new tab', async () => {
+    render(
+      <CommentThreadCard
+        thread={{ ...mockThread, file: 'src/services/logger.ts', line: 60 }}
+        reviewUrl="https://gitlab.example.com/group/project/-/merge_requests/123"
+        gitLabLine="A60"
+        onGeneratePrompt={() => 'thread prompt'}
+        onRemoveThread={vi.fn()}
+        onReplyToThread={vi.fn().mockResolvedValue(undefined)}
+        onRemoveMessage={vi.fn()}
+        onUpdateMessage={vi.fn()}
+      />,
+    );
+
+    const link = await screen.findByRole('link', { name: 'Open Link' });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://gitlab.example.com/group/project/-/merge_requests/123/diffs?file_path=src%2Fservices%2Flogger.ts#line_f1536cbbf_A60',
+    );
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
   it('does not show delete action for replies authored by someone else', () => {
     render(
       <CommentThreadCard
@@ -244,6 +317,23 @@ describe('CommentThreadCard', () => {
 
     expect(screen.getByText('Reply comment')).toBeInTheDocument();
     expect(screen.getByTitle('Resolve thread')).toBeInTheDocument();
+  });
+
+  it('shows resolved threads collapsed by default', () => {
+    render(
+      <CommentThreadCard
+        thread={{ ...mockThread, resolvedAt: '2026-09-11T00:00:00.000Z' }}
+        onGeneratePrompt={() => 'thread prompt'}
+        onRemoveThread={vi.fn()}
+        onReplyToThread={vi.fn().mockResolvedValue(undefined)}
+        onRemoveMessage={vi.fn()}
+        onUpdateMessage={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Expand thread' })).toBeInTheDocument();
+    expect(screen.queryByText('Reply comment')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Resolved thread')).toBeInTheDocument();
   });
 
   it('expands a collapsed thread by clicking the summary line', async () => {

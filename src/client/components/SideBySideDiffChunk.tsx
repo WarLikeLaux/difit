@@ -15,6 +15,7 @@ import {
   type WordLevelDiffResult,
 } from '../utils/wordLevelDiff';
 import { useFileLevelTokensLookup } from '../contexts/FileLevelTokensContext';
+import { getGitLabLineFragment } from '../utils/gitlabLinks';
 
 import { CommentButton } from './CommentButton';
 import { CommentForm } from './CommentForm';
@@ -29,6 +30,7 @@ interface SideBySideDiffChunkProps {
   chunkIndex: number;
   threads: CommentThread[];
   showAuthorBadges?: boolean;
+  reviewUrl?: string;
   onAddComment: (
     line: LineNumber,
     body: string,
@@ -145,6 +147,7 @@ export function SideBySideDiffChunk({
   chunkIndex,
   threads,
   showAuthorBadges = false,
+  reviewUrl,
   onAddComment,
   onGenerateThreadPrompt,
   onRemoveThread,
@@ -809,6 +812,10 @@ export function SideBySideDiffChunk({
                                 <CommentThreadCard
                                   thread={thread}
                                   showAuthorBadges={showAuthorBadges}
+                                  reviewUrl={reviewUrl}
+                                  gitLabLine={getGitLabLineFragment(
+                                    threadSide === 'old' ? sideLine.oldLine : sideLine.newLine,
+                                  )}
                                   onGeneratePrompt={onGenerateThreadPrompt}
                                   onRemoveThread={onRemoveThread}
                                   onReplyToThread={onReplyToThread}

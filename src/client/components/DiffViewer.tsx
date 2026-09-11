@@ -22,6 +22,7 @@ interface DiffViewerProps {
   file: DiffFile;
   threads: CommentThread[];
   showAuthorBadges?: boolean;
+  reviewUrl?: string;
   diffMode: DiffViewMode;
   reviewedFiles: Set<string>;
   isChangedSinceViewed?: boolean;
@@ -179,6 +180,7 @@ export const DiffViewer = memo(function DiffViewer({
   file,
   threads,
   showAuthorBadges = false,
+  reviewUrl,
   diffMode,
   reviewedFiles,
   isChangedSinceViewed = false,
@@ -338,6 +340,7 @@ export const DiffViewer = memo(function DiffViewer({
     file,
     threads,
     showAuthorBadges,
+    reviewUrl,
     diffMode,
     syntaxTheme,
     baseCommitish,

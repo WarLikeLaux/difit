@@ -59,6 +59,7 @@ export interface DiffResponse {
   requestedBaseMode?: BaseMode;
   clearComments?: boolean;
   repositoryId?: string;
+  reviewUrl?: string;
   commentImports?: CommentImport[];
   commentImportId?: string;
 }
@@ -115,6 +116,8 @@ export interface DiffCommentThread {
   filePath: string;
   createdAt: string; // ISO 8601 format
   updatedAt: string; // ISO 8601 format
+  acceptedAt?: string;
+  resolvedAt?: string;
 
   position: DiffCommentPosition;
 
@@ -194,10 +197,15 @@ export interface CommentThread {
   side?: DiffSide;
   createdAt: string;
   updatedAt: string;
+  acceptedAt?: string;
+  resolvedAt?: string;
   codeContent?: string;
   isOutdated?: boolean;
+  isOrphaned?: boolean;
   messages: DiffCommentMessage[];
 }
+
+export type CommentThreadStatus = 'open' | 'accepted' | 'resolved';
 
 // Revision selector types
 interface RevisionOption {

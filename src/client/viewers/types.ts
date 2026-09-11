@@ -9,6 +9,7 @@ export type DiffViewerBodyProps = {
   file: DiffFile;
   threads: CommentThread[];
   showAuthorBadges?: boolean;
+  reviewUrl?: string;
   diffMode: DiffViewMode;
   syntaxTheme?: AppearanceSettings['syntaxTheme'];
   baseCommitish?: string;

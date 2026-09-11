@@ -27,6 +27,7 @@ import { getFileExtension } from '../utils/fileUtils.js';
 
 import { FileWatcherService } from './file-watcher.js';
 import { GitDiffParser } from './git-diff.js';
+import { readCommentSessions, writeCommentSessions } from './comment-storage.js';
 import { parseUserSettingsPatch, readUserConfig, updateUserClientSettings } from './user-config.js';
 
 import {
@@ -59,6 +60,7 @@ interface ServerOptions {
   diffMode?: DiffMode;
   repoPath?: string;
   contextLines?: number;
+  reviewUrl?: string;
 }
 
 const GENERATED_STATUS_CACHE_TTL_MS = 60_000;
@@ -154,7 +156,7 @@ export async function startServer(
 
   app.use((_req, res, next) => {
     res.header('Access-Control-Allow-Origin', 'http://localhost:*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     next();
   });
@@ -246,13 +248,32 @@ export async function startServer(
     };
   }
 
-  const commentSessions = new Map<string, CommentSessionState>();
+  const commentSessions = new Map<string, CommentSessionState>(
+    Object.entries(await readCommentSessions(repositoryId)),
+  );
+  let commentPersistenceQueue = Promise.resolve();
+  const persistCommentSessions = (): Promise<void> => {
+    const snapshot = new Map(
+      [...commentSessions].map(([key, session]) => [
+        key,
+        { threads: structuredClone(session.threads), version: session.version },
+      ]),
+    );
+    const persistence = commentPersistenceQueue
+      .catch(() => undefined)
+      .then(() => writeCommentSessions(repositoryId, snapshot));
+    commentPersistenceQueue = persistence;
+    return persistence;
+  };
   const initialCommentThreads = mergeCommentImports([], initialCommentImports).threads;
   if (initialCommentThreads.length > 0) {
-    commentSessions.set(createCommentSessionKey(currentCommentSelection), {
-      threads: initialCommentThreads,
-      version: 1,
+    const key = createCommentSessionKey(currentCommentSelection);
+    const existing = commentSessions.get(key);
+    commentSessions.set(key, {
+      threads: mergeCommentThreads(existing?.threads ?? [], initialCommentThreads).threads,
+      version: (existing?.version ?? 0) + 1,
     });
+    await persistCommentSessions();
   }
 
   function getCommentSelectionFromQuery(query: Record<string, unknown>): DiffSelection {
@@ -364,6 +385,7 @@ export async function startServer(
       requestedBaseMode,
       clearComments: options.clearComments,
       repositoryId,
+      reviewUrl: options.reviewUrl,
       commentImports: shouldIncludeCommentImports ? initialCommentImports : undefined,
       commentImportId: shouldIncludeCommentImports ? commentImportId : undefined,
     });
@@ -613,6 +635,8 @@ export async function startServer(
       side: thread.position.side,
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
+      acceptedAt: thread.acceptedAt,
+      resolvedAt: thread.resolvedAt,
       codeContent: thread.codeSnapshot?.content,
       messages: thread.messages,
     };
@@ -657,6 +681,8 @@ export async function startServer(
         typeof thread.file === 'string' && thread.file.length > 0 ? thread.file : '<unknown file>',
       createdAt: thread.createdAt || firstMessage?.createdAt || now,
       updatedAt: thread.updatedAt || lastMessage?.updatedAt || thread.createdAt || now,
+      acceptedAt: thread.acceptedAt,
+      resolvedAt: thread.resolvedAt,
       position: {
         side: thread.side ?? 'new',
         line: normalizeLineValue(thread.line),
@@ -709,10 +735,10 @@ export async function startServer(
     return normalizeCommentImports(body);
   }
 
-  function updateCommentSession(
+  async function updateCommentSession(
     selection: DiffSelection,
     nextThreads: DiffCommentThread[],
-  ): boolean {
+  ): Promise<boolean> {
     const session = getOrCreateCommentSession(selection);
     const previous = JSON.stringify(session.threads);
     const next = JSON.stringify(nextThreads);
@@ -723,6 +749,7 @@ export async function startServer(
     }
 
     session.version += 1;
+    await persistCommentSessions();
     fileWatcher.broadcast({
       type: 'commentsChanged',
       version: session.version,
@@ -731,7 +758,7 @@ export async function startServer(
     return true;
   }
 
-  app.post('/api/comments', (req, res) => {
+  app.post('/api/comments', async (req, res) => {
     try {
       const selection = getCommentSelectionFromQuery(req.query as Record<string, unknown>);
       const body: unknown =
@@ -747,7 +774,7 @@ export async function startServer(
         ? mergeCommentThreads(session.threads, nextThreads).threads
         : nextThreads;
 
-      updateCommentSession(selection, resolvedThreads);
+      await updateCommentSession(selection, resolvedThreads);
 
       res.json({
         success: true,
@@ -761,7 +788,7 @@ export async function startServer(
     }
   });
 
-  app.post('/api/comment-imports', (req, res) => {
+  app.post('/api/comment-imports', async (req, res) => {
     try {
       const selection = getCommentSelectionFromQuery(req.query as Record<string, unknown>);
       const session = getOrCreateCommentSession(selection);
@@ -770,7 +797,7 @@ export async function startServer(
         .update(serializeCommentImports(commentImports))
         .digest('hex');
       const merged = mergeCommentImports(session.threads, commentImports);
-      const changed = updateCommentSession(selection, merged.threads);
+      const changed = await updateCommentSession(selection, merged.threads);
 
       res.json({
         success: true,
@@ -785,24 +812,62 @@ export async function startServer(
     }
   });
 
-  app.delete('/api/comments/:threadId', (req, res) => {
+  app.delete('/api/comments/:threadId', async (req, res) => {
     const selection = getCommentSelectionFromQuery(req.query as Record<string, unknown>);
     const session = getOrCreateCommentSession(selection);
     const threadId = req.params.threadId;
-    const nextThreads = session.threads.filter((thread) => thread.id !== threadId);
-
-    if (nextThreads.length === session.threads.length) {
+    const existingThread = session.threads.find((thread) => thread.id === threadId);
+    if (!existingThread) {
       res.status(404).json({ error: `Thread not found: ${threadId}` });
       return;
     }
 
-    updateCommentSession(selection, nextThreads);
+    const now = new Date().toISOString();
+    const nextThreads = session.threads.map((thread) =>
+      thread.id === threadId
+        ? { ...thread, updatedAt: now, acceptedAt: undefined, resolvedAt: now }
+        : thread,
+    );
+
+    await updateCommentSession(selection, nextThreads);
 
     res.json({
       success: true,
       threadId,
       version: session.version,
     });
+  });
+
+  app.patch('/api/comments/:threadId/status', async (req, res) => {
+    const selection = getCommentSelectionFromQuery(req.query as Record<string, unknown>);
+    const session = getOrCreateCommentSession(selection);
+    const threadId = req.params.threadId;
+    const status = (req.body as { status?: unknown } | undefined)?.status;
+    if (status !== 'open' && status !== 'accepted' && status !== 'resolved') {
+      res.status(400).json({ error: 'Invalid thread status' });
+      return;
+    }
+
+    const existingThread = session.threads.find((thread) => thread.id === threadId);
+    if (!existingThread) {
+      res.status(404).json({ error: `Thread not found: ${threadId}` });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const nextThreads = session.threads.map((thread) =>
+      thread.id === threadId
+        ? {
+            ...thread,
+            updatedAt: now,
+            acceptedAt: status === 'accepted' ? now : undefined,
+            resolvedAt: status === 'resolved' ? now : undefined,
+          }
+        : thread,
+    );
+
+    await updateCommentSession(selection, nextThreads);
+    res.json({ success: true, threadId, status, version: session.version });
   });
 
   app.get('/api/comments-json', (req, res) => {
@@ -819,8 +884,9 @@ export async function startServer(
     const session = getOrCreateCommentSession(selection);
     res.type('text/plain');
 
-    if (session.threads.length > 0) {
-      const output = formatCommentsOutput(session.threads.map(toCommentThread));
+    const unresolvedThreads = session.threads.filter((thread) => !thread.resolvedAt);
+    if (unresolvedThreads.length > 0) {
+      const output = formatCommentsOutput(unresolvedThreads.map(toCommentThread));
       res.send(output);
     } else {
       res.send('');
@@ -960,8 +1026,9 @@ export async function startServer(
   // Function to output comments when server shuts down
   function outputFinalComments() {
     const session = getOrCreateCommentSession(currentCommentSelection);
-    if (session.threads.length > 0) {
-      console.log(formatCommentsOutput(session.threads.map(toCommentThread)));
+    const unresolvedThreads = session.threads.filter((thread) => !thread.resolvedAt);
+    if (unresolvedThreads.length > 0) {
+      console.log(formatCommentsOutput(unresolvedThreads.map(toCommentThread)));
     }
   }
 
@@ -975,8 +1042,12 @@ export async function startServer(
     });
 
     fileWatcher.addClient(res);
+    const keepAliveInterval = setInterval(() => {
+      res.write(': keepalive\n\n');
+    }, 30_000);
 
     req.on('close', () => {
+      clearInterval(keepAliveInterval);
       fileWatcher.removeClient(res);
     });
   });

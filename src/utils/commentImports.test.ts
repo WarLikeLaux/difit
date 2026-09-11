@@ -216,6 +216,27 @@ describe('commentImports', () => {
       expect(result.threads[1]?.messages[1]?.body).toBe('Imported reply');
     });
 
+    it('reopens a resolved thread when a reply is imported', () => {
+      const existing = createThread({ id: 'thread-1', body: 'Root' });
+      existing.resolvedAt = '2024-01-02T00:00:00.000Z';
+
+      const result = mergeCommentImports(
+        [existing],
+        [
+          {
+            type: 'reply',
+            filePath: 'src/example.ts',
+            position: { side: 'new', line: 10 },
+            body: 'Imported reply',
+            author: 'Agent',
+          },
+        ],
+      );
+
+      expect(result.threads[0]?.resolvedAt).toBeUndefined();
+      expect(result.threads[0]?.messages).toHaveLength(2);
+    });
+
     it('skips a duplicate reply import', () => {
       const existing = createThread({ id: 'thread-1', body: 'Root' });
       existing.messages.push({

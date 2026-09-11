@@ -248,7 +248,7 @@ const next = true;
       expect(comment!.codeSnapshot?.language).toBe('typescript');
     });
 
-    it('should remove comment by id', () => {
+    it('should resolve a comment by id without removing its thread', () => {
       const { result } = renderHook(() => useDiffComments('main', 'feature-branch', 'abc123'));
 
       let commentId: string;
@@ -268,7 +268,8 @@ const next = true;
         result.current.removeComment(commentId);
       });
 
-      expect(result.current.comments).toHaveLength(0);
+      expect(result.current.comments).toHaveLength(1);
+      expect(result.current.threads[0]?.resolvedAt).toEqual(expect.any(String));
     });
 
     it('should update comment body', async () => {
@@ -499,6 +500,28 @@ const next = true;
       expect(result.current.threads[0]?.id).toBe(threadId);
       expect(result.current.threads[0]?.messages).toHaveLength(2);
       expect(result.current.threads[0]?.messages[1]?.body).toBe('Reply comment');
+    });
+
+    it('supports accepted status and permanent thread deletion', () => {
+      const { result } = renderHook(() => useDiffComments('main', 'feature-branch', 'abc123'));
+      let threadId = '';
+
+      act(() => {
+        threadId = result.current.addThread({
+          filePath: 'test.ts',
+          body: 'Fix later',
+          side: 'new',
+          line: 1,
+        }).id;
+      });
+
+      act(() => result.current.setThreadStatus(threadId, 'accepted'));
+
+      expect(result.current.threads[0]?.acceptedAt).toEqual(expect.any(String));
+      expect(result.current.threads[0]?.resolvedAt).toBeUndefined();
+
+      act(() => result.current.deleteThread(threadId));
+      expect(result.current.threads).toHaveLength(0);
     });
   });
 });
