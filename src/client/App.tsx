@@ -53,6 +53,7 @@ import { useViewport } from './hooks/useViewport';
 import { fetchClientSettings, saveClientSettings } from './services/userSettings';
 import { hasMultipleCommentAuthors } from './utils/commentAuthors';
 import { getReviewsDashboardUrl, resolveApiUrl } from './utils/apiUrl';
+import { createReviewTitle } from './utils/reviewTitle';
 import {
   findNewExternalMessages,
   showExternalMessageNotification,
@@ -783,10 +784,8 @@ function App() {
         });
         if (!response.ok) throw new Error('Failed to fetch diff data');
         const data = (await response.json()) as DiffResponse;
-        const reviewLabel = response.headers?.get?.('X-Difit-Review-Label')?.trim();
-        document.title = data.reviewId
-          ? `${reviewLabel || data.reviewBranch || 'Snapshot'} · DIFIT`
-          : 'DIFIT';
+        const reviewLabel = response.headers?.get?.('X-Difit-Review-Label');
+        document.title = createReviewTitle(data, reviewLabel);
         if (diffRequestIdRef.current !== requestId) {
           return;
         }
