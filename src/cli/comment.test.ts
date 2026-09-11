@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { createCommentCommand } from './comment.js';
+import { createCommentCommand, watchCommentOutput } from './comment.js';
 
 describe('createCommentCommand', () => {
   const command = createCommentCommand();
@@ -243,7 +243,7 @@ describe('comment subcommand integration', () => {
   });
 
   describe('watch', () => {
-    it('prints the initial comments and streams changed snapshots', async () => {
+    it('prints snapshots and reconnects after stream and network failures', async () => {
       const stream = new ReadableStream({
         start(controller) {
           controller.enqueue(
@@ -265,10 +265,14 @@ describe('comment subcommand integration', () => {
             threads: [{ id: 'agent-thread' }],
           }),
         )
-        .mockRejectedValueOnce(new TypeError('fetch failed'));
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValueOnce(
+          new Response(new ReadableStream({ start: (controller) => controller.close() }), {
+            headers: { 'Content-Type': 'text/event-stream' },
+          }),
+        );
 
-      const command = createCommentCommand();
-      await command.parseAsync(['node', 'difit', 'watch', '--port', '4966']);
+      await watchCommentOutput(4966, 'json', { maxConnections: 3, reconnectDelayMs: 0 });
 
       expect(mockFetch).toHaveBeenNthCalledWith(1, 'http://localhost:4966/api/comments-json');
       expect(mockFetch).toHaveBeenNthCalledWith(2, 'http://localhost:4966/api/watch', {
@@ -276,6 +280,9 @@ describe('comment subcommand integration', () => {
       });
       expect(mockFetch).toHaveBeenNthCalledWith(3, 'http://localhost:4966/api/comments-json');
       expect(mockFetch).toHaveBeenNthCalledWith(4, 'http://localhost:4966/api/watch', {
+        headers: { Accept: 'text/event-stream' },
+      });
+      expect(mockFetch).toHaveBeenNthCalledWith(5, 'http://localhost:4966/api/watch', {
         headers: { Accept: 'text/event-stream' },
       });
       expect(consoleOutput.map((output) => JSON.parse(output))).toEqual([

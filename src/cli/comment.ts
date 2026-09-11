@@ -38,62 +38,84 @@ async function fetchCommentOutput(port: number, format: CommentOutputFormat): Pr
   });
 }
 
-async function watchCommentOutput(port: number, format: CommentOutputFormat): Promise<void> {
-  let previousOutput = await fetchCommentOutput(port, format);
-  if (previousOutput) {
-    console.log(previousOutput);
-  }
+interface WatchCommentOutputOptions {
+  maxConnections?: number;
+  reconnectDelayMs?: number;
+}
 
-  while (true) {
-    const response = await fetch(`http://localhost:${port}/api/watch`, {
-      headers: { Accept: 'text/event-stream' },
-    });
-    if (!response.ok || !response.body) {
-      throw new Error('Failed to watch comments');
-    }
+export async function watchCommentOutput(
+  port: number,
+  format: CommentOutputFormat,
+  options: WatchCommentOutputOptions = {},
+): Promise<void> {
+  const maxConnections = options.maxConnections ?? Number.POSITIVE_INFINITY;
+  const reconnectDelayMs = options.reconnectDelayMs ?? 1_000;
+  let previousOutput: string | undefined;
+  let connectionCount = 0;
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+  while (connectionCount < maxConnections) {
+    connectionCount += 1;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      if (previousOutput === undefined) {
+        previousOutput = await fetchCommentOutput(port, format);
+        if (previousOutput) console.log(previousOutput);
+      }
 
-      buffer += decoder.decode(value, { stream: true });
-      let separatorIndex = buffer.indexOf('\n\n');
-      while (separatorIndex >= 0) {
-        const block = buffer.slice(0, separatorIndex);
-        buffer = buffer.slice(separatorIndex + 2);
-        const data = block
-          .split('\n')
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trimStart())
-          .join('\n');
+      const response = await fetch(`http://localhost:${port}/api/watch`, {
+        headers: { Accept: 'text/event-stream' },
+      });
+      if (!response.ok || !response.body) {
+        throw new Error('Failed to watch comments');
+      }
 
-        if (data) {
-          let event: { type?: string };
-          try {
-            event = JSON.parse(data) as { type?: string };
-          } catch {
-            separatorIndex = buffer.indexOf('\n\n');
-            continue;
-          }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-          if (event.type === 'commentsChanged') {
-            const nextOutput = await fetchCommentOutput(port, format);
-            if (nextOutput !== previousOutput) {
-              previousOutput = nextOutput;
-              if (nextOutput) console.log(nextOutput);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        let separatorIndex = buffer.indexOf('\n\n');
+        while (separatorIndex >= 0) {
+          const block = buffer.slice(0, separatorIndex);
+          buffer = buffer.slice(separatorIndex + 2);
+          const data = block
+            .split('\n')
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trimStart())
+            .join('\n');
+
+          if (data) {
+            let event: { type?: string };
+            try {
+              event = JSON.parse(data) as { type?: string };
+            } catch {
+              separatorIndex = buffer.indexOf('\n\n');
+              continue;
+            }
+
+            if (event.type === 'commentsChanged') {
+              const nextOutput = await fetchCommentOutput(port, format);
+              if (nextOutput !== previousOutput) {
+                previousOutput = nextOutput;
+                if (nextOutput) console.log(nextOutput);
+              }
             }
           }
-        }
 
-        separatorIndex = buffer.indexOf('\n\n');
+          separatorIndex = buffer.indexOf('\n\n');
+        }
       }
+    } catch {
+      // A watcher is expected to outlive transient server and network failures.
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (connectionCount < maxConnections) {
+      await new Promise((resolve) => setTimeout(resolve, reconnectDelayMs));
+    }
   }
 }
 
