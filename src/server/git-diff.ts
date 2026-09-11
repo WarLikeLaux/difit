@@ -117,7 +117,7 @@ export class GitDiffParser {
 
       // Ignore external diff-tools to unify output.
       // https://github.com/yoshiko-pg/difit/issues/19
-      diffArgs.push('--no-ext-diff', '--color=never');
+      diffArgs.push('--no-ext-diff', '--no-textconv', '--color=never');
 
       // Single git invocation for better startup latency on large repositories.
       const diffRaw = await this.git.diff(diffArgs);

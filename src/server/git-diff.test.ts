@@ -1517,6 +1517,7 @@ index abc123..def456 100644
         '1234567890abcdef1234567890abcdef12345678',
         '-U5',
         '--no-ext-diff',
+        '--no-textconv',
         '--color=never',
       ]);
       expect(response).toEqual({
@@ -1551,6 +1552,7 @@ index abc123..def456 100644
         'abcdef1234567890abcdef1234567890abcdef12',
         '1234567890abcdef1234567890abcdef12345678',
         '--no-ext-diff',
+        '--no-textconv',
         '--color=never',
       ]);
       expect(response).toEqual({
@@ -1584,6 +1586,7 @@ index abc123..def456 100644
       expect(gitDiff).toHaveBeenCalledWith([
         'fedcba9876543210fedcba9876543210fedcba98',
         '--no-ext-diff',
+        '--no-textconv',
         '--color=never',
       ]);
       expect(response).toEqual({
