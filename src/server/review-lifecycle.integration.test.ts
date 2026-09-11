@@ -123,6 +123,7 @@ describe('branch review lifecycle', () => {
     expect(reviews).toHaveLength(1);
     expect(reviews[0]).toMatchObject({
       branch: 'feature/one',
+      followsBranch: true,
       running: true,
       stale: false,
       counts: { open: 1 },
