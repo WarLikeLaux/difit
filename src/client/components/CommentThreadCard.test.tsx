@@ -508,14 +508,17 @@ describe('CommentThreadCard', () => {
     expect(onRemoveMessage).toHaveBeenCalledWith('thread-1', 'message-2');
   });
 
-  it('shows only the last two replies by default and can expand them', async () => {
+  it('shows the last user message and every later reply by default', async () => {
     const user = userEvent.setup();
-    const replies = [1, 2, 3, 4].map((number) => ({
-      id: `reply-${number}`,
-      body: `Reply ${number}`,
-      author: 'Reviewer',
-      createdAt: `2024-01-01T00:0${number}:00Z`,
-      updatedAt: `2024-01-01T00:0${number}:00Z`,
+    const replies = [
+      { id: 'old-agent', body: 'Old agent reply', author: 'Agent' },
+      { id: 'last-user', body: 'Latest user question', author: 'User' },
+      { id: 'agent-1', body: 'First agent answer', author: 'Agent' },
+      { id: 'agent-2', body: 'Second agent answer', author: 'Agent' },
+    ].map((message, index) => ({
+      ...message,
+      createdAt: `2024-01-01T00:0${index + 1}:00Z`,
+      updatedAt: `2024-01-01T00:0${index + 1}:00Z`,
     }));
 
     render(
@@ -529,17 +532,16 @@ describe('CommentThreadCard', () => {
       />,
     );
 
-    expect(screen.queryByText('Reply 1')).not.toBeInTheDocument();
-    expect(screen.queryByText('Reply 2')).not.toBeInTheDocument();
-    expect(screen.getByText('Reply 3')).toBeInTheDocument();
-    expect(screen.getByText('Reply 4')).toBeInTheDocument();
+    expect(screen.queryByText('Old agent reply')).not.toBeInTheDocument();
+    expect(screen.getByText('Latest user question')).toBeInTheDocument();
+    expect(screen.getByText('First agent answer')).toBeInTheDocument();
+    expect(screen.getByText('Second agent answer')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Show all 4 replies' }));
-    expect(screen.getByText('Reply 1')).toBeInTheDocument();
-    expect(screen.getByText('Reply 2')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show 1 earlier reply' }));
+    expect(screen.getByText('Old agent reply')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Show last 2' }));
-    expect(screen.queryByText('Reply 1')).not.toBeInTheDocument();
-    expect(screen.getByText('Reply 4')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show latest conversation' }));
+    expect(screen.queryByText('Old agent reply')).not.toBeInTheDocument();
+    expect(screen.getByText('Second agent answer')).toBeInTheDocument();
   });
 });

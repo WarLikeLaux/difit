@@ -331,7 +331,17 @@ export function CommentThreadCard({
   const rootMessage = thread.messages[0];
   if (!rootMessage) return null;
   const replyMessages = thread.messages.slice(1);
-  const visibleReplyMessages = showAllReplies ? replyMessages : replyMessages.slice(-2);
+  let lastUserMessageIndex = -1;
+  for (let index = thread.messages.length - 1; index > 0; index -= 1) {
+    if (thread.messages[index]?.author?.trim() === 'User') {
+      lastUserMessageIndex = index;
+      break;
+    }
+  }
+  const latestConversationReplies =
+    lastUserMessageIndex > 0 ? thread.messages.slice(lastUserMessageIndex) : replyMessages;
+  const hiddenEarlierReplies = replyMessages.length - latestConversationReplies.length;
+  const visibleReplyMessages = showAllReplies ? replyMessages : latestConversationReplies;
 
   return (
     <div
@@ -569,7 +579,7 @@ export function CommentThreadCard({
             hideAction={Boolean(thread.resolvedAt) || Boolean(onThreadStatusChange)}
           />
 
-          {!repliesHidden && replyMessages.length > 2 && (
+          {!repliesHidden && hiddenEarlierReplies > 0 && (
             <div className="ml-4 flex justify-end">
               <button
                 type="button"
@@ -579,7 +589,9 @@ export function CommentThreadCard({
                 }}
                 className="text-xs text-blue-400 hover:text-blue-300 hover:underline"
               >
-                {showAllReplies ? 'Show last 2' : `Show all ${replyMessages.length} replies`}
+                {showAllReplies
+                  ? 'Show latest conversation'
+                  : `Show ${hiddenEarlierReplies} earlier ${hiddenEarlierReplies === 1 ? 'reply' : 'replies'}`}
               </button>
             </div>
           )}
