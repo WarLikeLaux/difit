@@ -28,7 +28,10 @@ function normalizeHttpOrigin(value: string): string {
   return url.origin;
 }
 
-export function restrictRequestOrigins(additionalOrigins: readonly string[] = []): RequestHandler {
+export function restrictRequestOrigins(
+  additionalOrigins: readonly string[] = [],
+  allowRequestOrigin = true,
+): RequestHandler {
   const allowedProxyOrigins = new Set(additionalOrigins.map(normalizeHttpOrigin));
 
   return (req, res, next) => {
@@ -50,7 +53,10 @@ export function restrictRequestOrigins(additionalOrigins: readonly string[] = []
     const requestOrigin = requestHost
       ? normalizeHttpOrigin(`${req.protocol}://${requestHost}`)
       : undefined;
-    if (parsedOrigin !== requestOrigin && !allowedProxyOrigins.has(parsedOrigin)) {
+    if (
+      (!allowRequestOrigin || parsedOrigin !== requestOrigin) &&
+      !allowedProxyOrigins.has(parsedOrigin)
+    ) {
       res.status(403).json({ error: 'Origin is not allowed' });
       return;
     }

@@ -209,7 +209,9 @@ export async function startHubServer(
     throw new Error(`Unsupported public origin protocol: ${publicOrigin.protocol}`);
   }
   app.use(restrictRequestHosts([host, ...(publicOrigin ? [publicOrigin.hostname] : [])]));
-  app.use(restrictRequestOrigins(publicOrigin ? [publicOrigin.origin] : []));
+  app.use(
+    restrictRequestOrigins(publicOrigin ? [publicOrigin.origin] : [], publicOrigin === undefined),
+  );
   app.use(restrictCrossSiteBrowserRequests());
   app.use(setSecurityHeaders({ nonceInlineScript: true }));
   const clients = new Set<import('express').Response>();
