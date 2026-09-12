@@ -23,6 +23,7 @@ import { createCommentCommand } from './comment.js';
 import { createAuthCommand } from './auth-command.js';
 import { authenticatedFetch } from './auth-client.js';
 import { createHubCommand } from './hub.js';
+import { createReviewCommand } from './review-command.js';
 import { getPrPatch, getPrCommentImports } from './github.js';
 import { detectGitLabMergeRequestUrl, normalizeGitLabMergeRequestUrl } from './gitlab.js';
 import {
@@ -107,6 +108,7 @@ program
   .addCommand(createAuthCommand())
   .addCommand(createCommentCommand())
   .addCommand(createHubCommand())
+  .addCommand(createReviewCommand())
   .argument(
     '[commit-ish]',
     'Git commit, tag, branch, HEAD~n reference, or "working"/"staged"/"."',
