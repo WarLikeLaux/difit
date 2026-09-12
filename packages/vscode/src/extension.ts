@@ -9,7 +9,7 @@ import { createDiffSelection, getDiffSelectionKey } from '../../../src/utils/dif
 const OPEN_REVIEW_COMMAND = 'difit.openReview';
 const STOP_REVIEW_COMMAND = 'difit.stopReview';
 const STARTUP_TIMEOUT_MS = 30_000;
-const SERVER_URL_PATTERN = /difit server started on (https?:\/\/\S+)/i;
+const SERVER_URL_PATTERN = /difit browser available at (https?:\/\/\S+)/i;
 
 interface ReviewTarget {
   selection: DiffSelection;

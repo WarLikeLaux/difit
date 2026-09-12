@@ -224,6 +224,30 @@ under the same origin at `/reviews/<review-id>/`, with a back button to the revi
 internal localhost ports are not exposed in the UI. Checkout-specific metadata stays in the local
 Difit config directory.
 
+### Local access security
+
+Browser access is intentionally routed through one configured HTTPS hub origin. On first use,
+retrieve the independently generated browser key in a trusted terminal and enter it on the login
+page:
+
+```sh
+difit auth key
+difit hub --host 127.0.0.1 --port 4965 --public-origin https://difit.local
+```
+
+The browser then receives a host-only, `HttpOnly`, `Secure`, `SameSite=Strict` session for up to 30
+days. The session survives ordinary restarts. Use the UI's **Log out** action to revoke only the
+current browser session, `difit auth revoke` to revoke all browser sessions, or `difit auth rotate`
+to replace the browser key and revoke all existing sessions. CLI commands use a separate private
+credential automatically; `difit auth rotate-cli` replaces it and disconnects existing watchers.
+
+Direct viewer ports bind to loopback but remain authenticated. They do not offer a weaker HTTP
+browser login because browser cookies are not isolated by port. Open reviews through the HTTPS hub;
+CLI commands authenticate to direct viewer ports without prompting or placing credentials in URLs.
+
+See [the fork security policy](.github/SECURITY.md) for the trust model, storage, and network
+boundaries.
+
 ## 🤖 Calling from Agents
 
 You can install the following Skills to work with difit from AI agents.

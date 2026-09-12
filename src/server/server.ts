@@ -28,6 +28,15 @@ import { createId } from '../utils/createId.js';
 
 import { FileWatcherService } from './file-watcher.js';
 import { GitDiffParser } from './git-diff.js';
+import {
+  type AuthService,
+  getAuthenticatedPrincipal,
+  getDefaultAuthService,
+  monitorAuthenticatedConnection,
+  requireAuthentication,
+  requireBrowserMutationOrigin,
+} from './auth.js';
+import { logoutHandler } from './auth-http.js';
 import { readCommentSessions, writeCommentSessions } from './comment-storage.js';
 import {
   createReviewContext,
@@ -60,7 +69,7 @@ import {
   getDiffSelectionKey,
 } from '../utils/diffSelection.js';
 
-interface ServerOptions {
+export interface ServerOptions {
   selection?: DiffSelection;
   stdinDiff?: string;
   preferredPort?: number;
@@ -74,6 +83,7 @@ interface ServerOptions {
   repoPath?: string;
   contextLines?: number;
   reviewUrl?: string;
+  authService?: AuthService;
 }
 
 const GENERATED_STATUS_CACHE_TTL_MS = 60_000;
@@ -132,10 +142,16 @@ function createResolvedCommentSelection(
   return createDiffSelection(baseCommitish, targetCommitish, baseMode);
 }
 
-export async function startServer(
-  options: ServerOptions,
-): Promise<{ port: number; url: string; isEmpty?: boolean; server?: Server }> {
+export async function startServer(options: ServerOptions): Promise<{
+  port: number;
+  url: string;
+  browserUrl?: string;
+  isEmpty?: boolean;
+  server?: Server;
+}> {
   const app = express();
+  const auth = options.authService ?? getDefaultAuthService();
+  await auth.initialize();
   const repositoryPath = resolve(options.repoPath ?? process.cwd());
   const repositoryId = createHash('sha256').update(repositoryPath).digest('hex');
   const initialCommentImports = options.commentImports || [];
@@ -181,8 +197,11 @@ export async function startServer(
   app.use(restrictRequestOrigins());
   app.use(restrictCrossSiteBrowserRequests());
   app.use(setSecurityHeaders());
-  app.use(express.json());
-  app.use(express.text()); // For sendBeacon text/plain requests
+  app.use(express.json({ limit: '100kb' }));
+  app.use(express.text({ limit: '100kb' })); // For sendBeacon text/plain requests
+  app.use(requireAuthentication(auth));
+  app.use(requireBrowserMutationOrigin());
+  app.post('/auth/logout', logoutHandler(auth));
 
   const readBranchState = async (): Promise<ReviewBranchState> =>
     reviewContext ? getReviewBranchState(reviewContext) : { stale: false };
@@ -1246,15 +1265,20 @@ export async function startServer(
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
     });
 
     fileWatcher.addClient(res);
+    const stopAuthMonitor = monitorAuthenticatedConnection(
+      auth,
+      getAuthenticatedPrincipal(res.locals as Record<string, unknown>),
+      () => res.end(),
+    );
     const keepAliveInterval = setInterval(() => {
       res.write(': keepalive\n\n');
     }, 30_000);
 
     req.on('close', () => {
+      stopAuthMonitor();
       clearInterval(keepAliveInterval);
       fileWatcher.removeClient(res);
     });
@@ -1266,11 +1290,16 @@ export async function startServer(
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
     });
 
     // Send initial heartbeat
     res.write('data: connected\n\n');
+
+    const stopAuthMonitor = monitorAuthenticatedConnection(
+      auth,
+      getAuthenticatedPrincipal(res.locals as Record<string, unknown>),
+      () => res.end(),
+    );
 
     // Send heartbeat every 5 seconds
     const heartbeatInterval = setInterval(() => {
@@ -1279,6 +1308,7 @@ export async function startServer(
 
     // When client disconnects (tab closed, navigation, etc.)
     req.on('close', () => {
+      stopAuthMonitor();
       clearInterval(heartbeatInterval);
       if (options.keepAlive) {
         console.log('Client disconnected, but server is staying alive (--keep-alive)');
@@ -1353,18 +1383,30 @@ export async function startServer(
     }
   }
 
+  const publicOrigin = await auth.getPublicOrigin();
+  const browserUrl =
+    publicOrigin && reviewContext
+      ? `${publicOrigin}/reviews/${encodeURIComponent(reviewContext.id)}/`
+      : undefined;
+
   // Check if diff is empty and skip browser opening
   if (initialDiffData.isEmpty) {
     // Don't open browser if no differences found
   } else if (options.openBrowser) {
     try {
-      await open(url);
+      if (!browserUrl) {
+        console.warn(
+          'Browser access requires the configured HTTPS Difit hub; open this review from the dashboard.',
+        );
+      } else {
+        await open(browserUrl);
+      }
     } catch {
       console.warn('Failed to open browser automatically');
     }
   }
 
-  return { port, url, isEmpty: initialDiffData.isEmpty || false, server };
+  return { port, url, browserUrl, isEmpty: initialDiffData.isEmpty || false, server };
 }
 
 async function startServerWithFallback(

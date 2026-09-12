@@ -4,6 +4,7 @@ import { dirname } from 'path';
 
 import { parseCommentImportValue } from '../utils/commentImports.js';
 
+import { authenticatedFetch } from './auth-client.js';
 import { detectStdinSource, readStdin } from './utils.js';
 
 interface CommentImportResponse {
@@ -66,7 +67,7 @@ function getCursorMessageKey(event: Pick<UserCommentEvent, 'threadId' | 'id'>): 
 
 async function fetchCommentOutput(port: number, format: CommentOutputFormat): Promise<string> {
   const endpoint = format === 'json' ? '/api/comments-json' : '/api/comments-output';
-  const response = await fetch(`http://localhost:${port}${endpoint}`);
+  const response = await authenticatedFetch(`http://localhost:${port}${endpoint}`);
 
   if (!response.ok) {
     throw new Error('Failed to retrieve comments');
@@ -90,7 +91,7 @@ interface WatchCommentOutputOptions {
 }
 
 async function fetchCommentThreads(port: number): Promise<CommentThreadsResponse> {
-  const response = await fetch(`http://localhost:${port}/api/comments-json`);
+  const response = await authenticatedFetch(`http://localhost:${port}/api/comments-json`);
   if (!response.ok) throw new Error('Failed to retrieve comments');
   return (await response.json()) as CommentThreadsResponse;
 }
@@ -216,7 +217,7 @@ export async function watchCommentOutput(
         if (previousOutput) console.log(previousOutput);
       }
 
-      const response = await fetch(`http://localhost:${port}/api/watch`, {
+      const response = await authenticatedFetch(`http://localhost:${port}/api/watch`, {
         headers: { Accept: 'text/event-stream' },
       });
       if (!response.ok || !response.body) {
@@ -325,7 +326,7 @@ async function updateThreadMessage(
   path: string,
   body: string,
 ): Promise<void> {
-  const response = await fetch(`http://localhost:${port}${path}`, {
+  const response = await authenticatedFetch(`http://localhost:${port}${path}`, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ body }),
@@ -353,7 +354,7 @@ function addStatusCommand(
       try {
         const results = await Promise.all(
           threadIds.map(async (threadId) => {
-            const response = await fetch(
+            const response = await authenticatedFetch(
               `http://localhost:${opts.port}/api/comments/${encodeURIComponent(threadId)}/status`,
               {
                 method: 'PATCH',
@@ -404,11 +405,14 @@ export function createCommentCommand(): Command {
         const input = await parseCommentAddInput(json);
         const imports = parseCommentImportValue(input);
 
-        const response = await fetch(`http://localhost:${opts.port}/api/comment-imports`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(imports),
-        });
+        const response = await authenticatedFetch(
+          `http://localhost:${opts.port}/api/comment-imports`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(imports),
+          },
+        );
 
         if (!response.ok) {
           const errorBody = (await response.json().catch(() => ({}))) as {
@@ -536,7 +540,7 @@ export function createCommentCommand(): Command {
               status: 'resolved' | 'notFound' | 'error';
               error?: string;
             }> => {
-              const response = await fetch(
+              const response = await authenticatedFetch(
                 `http://localhost:${opts.port}/api/comments/${encodeURIComponent(threadId)}`,
                 { method: 'DELETE' },
               );

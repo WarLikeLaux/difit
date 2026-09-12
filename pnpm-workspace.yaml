@@ -2,10 +2,19 @@ packages:
   - .
   - packages/*
 overrides:
+  baseline-browser-mapping: 2.11.0
   body-parser: 2.3.0
+  browserslist: 4.28.9
+  brace-expansion: 5.0.9
   dompurify: 3.4.15
+  fast-uri: 3.1.7
+  linkify-it: 5.0.2
+  nanoid@3: 3.3.19
   path-to-regexp: 8.4.0
+  postcss: 8.5.28
   qs: 6.16.0
+  smol-toml: 1.8.0
+  undici@7: 7.29.0
 allowBuilds:
   '@parcel/watcher': true
   '@vscode/vsce-sign': true
