@@ -1641,7 +1641,7 @@ describe('Server Integration Tests', () => {
 
       const response = await fetch(`http://localhost:${result.port}/api/diff`);
       expect(response.headers.get('Cache-Control')).toBe('no-store');
-      expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+      expect(response.headers.get('Referrer-Policy')).toBe('same-origin');
       expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
       expect(response.headers.get('Origin-Agent-Cluster')).toBe('?1');
       expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');

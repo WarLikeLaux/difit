@@ -117,7 +117,7 @@ export function setSecurityHeaders(options: { nonceInlineScript?: boolean } = {}
     crossOriginOpenerPolicy: { policy: 'same-origin' },
     crossOriginResourcePolicy: { policy: 'same-origin' },
     originAgentCluster: true,
-    referrerPolicy: { policy: 'no-referrer' },
+    referrerPolicy: { policy: 'same-origin' },
     strictTransportSecurity: false,
     xFrameOptions: { action: 'deny' },
   });
