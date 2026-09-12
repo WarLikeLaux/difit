@@ -20,6 +20,7 @@ export class GitDiffParser {
   private static readonly RESOLVED_COMMIT_CACHE_TTL_MS = 5_000;
   private static readonly GENERATED_HEADER_SCAN_BYTES = 4 * 1024;
   private static readonly GITATTRIBUTES_CHECK_CHUNK_SIZE = 200;
+  private static readonly MAX_DISPLAY_BLOB_BYTES = 10 * 1024 * 1024;
 
   constructor(repoPath = process.cwd()) {
     this.repoPath = repoPath;
@@ -632,6 +633,10 @@ export class GitDiffParser {
           throw new Error('File path outside repository');
         }
 
+        if (fs.statSync(absolutePath).size > GitDiffParser.MAX_DISPLAY_BLOB_BYTES) {
+          throw new Error(`Image file ${filepath} is too large to display (over 10MB limit)`);
+        }
+
         return fs.readFileSync(absolutePath);
       }
 
@@ -676,7 +681,9 @@ export class GitDiffParser {
 
       if (
         error instanceof Error &&
-        (error.message === 'Invalid file path' || error.message === 'File path outside repository')
+        (error.message === 'Invalid file path' ||
+          error.message === 'File path outside repository' ||
+          error.message === `Image file ${filepath} is too large to display (over 10MB limit)`)
       ) {
         throw error;
       }

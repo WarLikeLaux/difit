@@ -104,7 +104,7 @@ export function setSecurityHeaders(options: { nonceInlineScript?: boolean } = {}
         baseUri: ["'none'"],
         connectSrc: ["'self'"],
         fontSrc: ["'self'", 'data:'],
-        formAction: ["'none'"],
+        formAction: ["'self'"],
         frameAncestors: ["'none'"],
         imgSrc: ["'self'", 'blob:', 'data:'],
         objectSrc: ["'none'"],

@@ -8,6 +8,7 @@ import {
   List,
   ExternalLink,
   ArrowLeft,
+  LogOut,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 
@@ -1523,6 +1524,16 @@ function App() {
                   </code>
                 </span>
               )}
+              <form method="post" action={resolveApiUrl('/auth/logout')}>
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-github-border px-2.5 py-1.5 text-xs text-github-text-secondary transition-colors hover:bg-github-bg-tertiary hover:text-github-text-primary"
+                  title="Revoke this browser session"
+                >
+                  <LogOut size={14} />
+                  Log out
+                </button>
+              </form>
             </div>
           </div>
         </header>

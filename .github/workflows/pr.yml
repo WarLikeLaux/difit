@@ -1,8 +1,10 @@
 name: PR Checks
 
 on:
+  push:
+    branches: [custom]
   pull_request:
-    branches: [main]
+    branches: [main, custom]
 
 permissions:
   contents: read

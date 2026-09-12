@@ -3,6 +3,11 @@ import { promises as fs } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
+vi.mock('./auth-client.js', () => ({
+  authenticatedFetch: (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+    init === undefined ? fetch(input) : fetch(input, init),
+}));
+
 import { createCommentCommand, watchCommentOutput } from './comment.js';
 
 describe('createCommentCommand', () => {

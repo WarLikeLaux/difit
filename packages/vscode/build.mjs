@@ -2,17 +2,32 @@
 // server (from the monorepo source) with esbuild, then copies the prebuilt
 // client assets and the @parcel/watcher native prebuilds into dist/.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
+import { load as loadYaml } from 'js-yaml';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
 const distDir = path.join(here, 'dist');
 const require = createRequire(import.meta.url);
+/** @typedef {{ packages?: Record<string, { resolution?: { integrity?: unknown } }> }} Lockfile */
+/** @type {Lockfile} */
+const lockfile = /** @type {Lockfile} */ (
+  loadYaml(readFileSync(path.join(repoRoot, 'pnpm-lock.yaml'), 'utf8')) ?? {}
+);
 
 // Native prebuilds shipped in the VSIX. Covers every platform VS Code desktop
 // runs on; a missing prebuild only disables live reload there (difit loads the
@@ -118,7 +133,13 @@ function resolveLocalPrebuild(packageName) {
 async function fetchPrebuild(packageName, version) {
   const extractDir = path.join(cacheDir, packageName);
   const cachedBinary = path.join(extractDir, 'package', 'watcher.node');
-  if (existsSync(cachedBinary)) {
+  const integrity = getLockedIntegrity(packageName, version);
+  const integrityMarker = path.join(extractDir, '.integrity');
+  if (
+    existsSync(cachedBinary) &&
+    existsSync(integrityMarker) &&
+    readFileSync(integrityMarker, 'utf8').trim() === integrity
+  ) {
     return cachedBinary;
   }
 
@@ -131,9 +152,13 @@ async function fetchPrebuild(packageName, version) {
       throw new Error(`HTTP ${response.status}`);
     }
 
+    const tarball = Buffer.from(await response.arrayBuffer());
+    verifyIntegrity(tarball, integrity, packageName, version);
+
+    rmSync(extractDir, { recursive: true, force: true });
     mkdirSync(extractDir, { recursive: true });
     const tarballPath = path.join(extractDir, 'package.tgz');
-    writeFileSync(tarballPath, Buffer.from(await response.arrayBuffer()));
+    writeFileSync(tarballPath, tarball);
 
     const result = spawnSync('tar', [
       '-xzf',
@@ -146,11 +171,41 @@ async function fetchPrebuild(packageName, version) {
     if (result.status !== 0) {
       throw new Error(result.stderr?.toString().trim() || 'tar extraction failed');
     }
+    writeFileSync(integrityMarker, `${integrity}\n`, { mode: 0o600 });
 
     return cachedBinary;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`warn: failed to download ${packageName}@${version}: ${message}`);
     return undefined;
+  }
+}
+
+/**
+ * @param {string} packageName
+ * @param {string} version
+ * @returns {string}
+ */
+function getLockedIntegrity(packageName, version) {
+  const entry = lockfile?.packages?.[`${packageName}@${version}`];
+  const integrity = entry?.resolution?.integrity;
+  if (typeof integrity !== 'string' || !/^sha(256|384|512)-/.test(integrity)) {
+    throw new Error(`Missing lockfile integrity for ${packageName}@${version}`);
+  }
+  return integrity;
+}
+
+/**
+ * @param {Buffer} content
+ * @param {string} integrity
+ * @param {string} packageName
+ * @param {string} version
+ */
+function verifyIntegrity(content, integrity, packageName, version) {
+  const [algorithm, encodedDigest] = integrity.split('-', 2);
+  const expected = Buffer.from(encodedDigest, 'base64');
+  const actual = createHash(algorithm).update(content).digest();
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new Error(`Integrity verification failed for ${packageName}@${version}`);
   }
 }

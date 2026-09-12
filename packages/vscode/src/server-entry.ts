@@ -22,7 +22,7 @@ async function main(): Promise<void> {
 
   const request = JSON.parse(raw) as LaunchRequest;
 
-  const { url, port, isEmpty } = await startServer({
+  const { browserUrl, port, isEmpty } = await startServer({
     selection: request.selection,
     diffMode: request.diffMode,
     repoPath: request.repoPath,
@@ -30,7 +30,13 @@ async function main(): Promise<void> {
     keepAlive: true,
   });
 
-  process.send?.({ type: 'ready', url, port, isEmpty });
+  if (!browserUrl) {
+    throw new Error(
+      'Browser access requires an HTTPS Difit hub. Start it once with --public-origin.',
+    );
+  }
+
+  process.send?.({ type: 'ready', url: browserUrl, port, isEmpty });
 }
 
 main().catch((error: unknown) => {

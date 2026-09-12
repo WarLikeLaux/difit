@@ -6,6 +6,15 @@ import express from 'express';
 
 import type { DiffCommentThread } from '../types/diff.js';
 
+import {
+  type AuthService,
+  getAuthenticatedPrincipal,
+  getDefaultAuthService,
+  monitorAuthenticatedConnection,
+  requireAuthentication,
+  requireBrowserMutationOrigin,
+} from './auth.js';
+import { installBrowserLoginRoutes, logoutHandler } from './auth-http.js';
 import { readCommentSessions } from './comment-storage.js';
 import { getReviewBranchState, type ReviewContext } from './review-context.js';
 import { readReviewRegistrations, type ReviewRegistration } from './review-registry.js';
@@ -46,9 +55,10 @@ export interface HubReview {
   viewerUrl?: string;
 }
 
-interface HubServerOptions {
+export interface HubServerOptions {
   terminateProcess?: (pid: number) => void;
   publicOrigin?: string;
+  authService?: AuthService;
 }
 
 function normalizeExternalReviewUrl(value: string | undefined): string | undefined {
@@ -101,9 +111,14 @@ function toReviewContext(registration: ReviewRegistration): ReviewContext {
   };
 }
 
-async function isReviewServerRunning(registration: ReviewRegistration): Promise<boolean> {
+async function isReviewServerRunning(
+  registration: ReviewRegistration,
+  auth = getDefaultAuthService(),
+): Promise<boolean> {
   try {
+    const authorization = await auth.getCliAuthorizationHeader();
     const response = await fetch(`http://127.0.0.1:${registration.port}/api/review-context`, {
+      headers: { Authorization: authorization },
       signal: AbortSignal.timeout(350),
     });
     if (response.ok) {
@@ -113,6 +128,7 @@ async function isReviewServerRunning(registration: ReviewRegistration): Promise<
     if (response.status !== 404 || !registration.reviewUrl) return false;
 
     const legacyResponse = await fetch(`http://127.0.0.1:${registration.port}/api/diff`, {
+      headers: { Authorization: authorization },
       signal: AbortSignal.timeout(350),
     });
     if (!legacyResponse.ok) return false;
@@ -123,7 +139,7 @@ async function isReviewServerRunning(registration: ReviewRegistration): Promise<
   }
 }
 
-export async function getHubReviews(): Promise<HubReview[]> {
+export async function getHubReviews(auth = getDefaultAuthService()): Promise<HubReview[]> {
   const registrations = await readReviewRegistrations();
   const reviews = await Promise.all(
     registrations.map(async (registration): Promise<HubReview> => {
@@ -132,7 +148,7 @@ export async function getHubReviews(): Promise<HubReview[]> {
         .map(summarizeThread)
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
       const branchState = await getReviewBranchState(toReviewContext(registration));
-      const running = await isReviewServerRunning(registration);
+      const running = await isReviewServerRunning(registration, auth);
       const counts: HubReview['counts'] = {
         open: 0,
         accepted: 0,
@@ -178,11 +194,11 @@ const HUB_HTML = `<!doctype html>
   <title>DIFIT</title>
   <style>
     :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#0d1117;color:#e6edf3}
-    *{box-sizing:border-box}body{margin:0;background:#0d1117}header{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid #30363d;background:#161b22}h1{font-size:18px;margin:0}.muted{color:#8b949e}.layout{max-width:1440px;margin:0 auto;padding:24px}.toolbar{display:flex;gap:8px;margin-bottom:18px}.toolbar button{border:1px solid #30363d;background:#161b22;color:#c9d1d9;border-radius:6px;padding:7px 12px;cursor:pointer}.toolbar button.active{border-color:#2f81f7;color:#fff}.review{border:1px solid #30363d;background:#161b22;border-radius:8px;margin-bottom:16px;overflow:hidden}.review-head{display:flex;gap:14px;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #30363d}.review-title{min-width:0}.review-title strong,.review-title code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.review-title code{font-size:12px;color:#8b949e;margin-top:4px}.badges{display:flex;flex-wrap:wrap;gap:6px}.badge{border:1px solid #30363d;border-radius:999px;padding:3px 8px;font-size:12px}.review-mode{color:#d2a8ff}.running{color:#3fb950}.stopped{color:#8b949e}.stale{color:#f85149}.open{color:#f2cc60}.accepted{color:#58a6ff}.to_verify{color:#bc8cff}.ready{color:#3fb950}.threads{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1px;background:#30363d}.thread{background:#0d1117;padding:12px 16px;min-width:0}.thread-top{display:flex;justify-content:space-between;gap:12px;font-size:12px}.thread-path{font-family:ui-monospace,monospace;color:#58a6ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.message{font-size:13px;line-height:1.45;margin-top:8px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.actions{display:flex;gap:8px;flex-shrink:0}.actions a,.actions button{border:1px solid #30363d;background:transparent;border-radius:6px;color:#e6edf3;text-decoration:none;padding:7px 10px;font:inherit;font-size:12px;cursor:pointer}.actions .close-viewer{border-color:#6e3035;color:#ff7b72}.actions .close-viewer:hover{background:#3d1f24;border-color:#f85149}.actions button:disabled{cursor:wait;opacity:.55}.empty{padding:36px;text-align:center;color:#8b949e}@media(max-width:700px){.layout{padding:12px}.review-head{align-items:flex-start;flex-direction:column}.threads{grid-template-columns:1fr}}
+    *{box-sizing:border-box}body{margin:0;background:#0d1117}header{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid #30363d;background:#161b22}h1{font-size:18px;margin:0}.top-actions{display:flex;align-items:center;gap:12px}.logout{border:1px solid #30363d;background:transparent;border-radius:6px;color:#c9d1d9;padding:6px 10px;cursor:pointer}.muted{color:#8b949e}.layout{max-width:1440px;margin:0 auto;padding:24px}.toolbar{display:flex;gap:8px;margin-bottom:18px}.toolbar button{border:1px solid #30363d;background:#161b22;color:#c9d1d9;border-radius:6px;padding:7px 12px;cursor:pointer}.toolbar button.active{border-color:#2f81f7;color:#fff}.review{border:1px solid #30363d;background:#161b22;border-radius:8px;margin-bottom:16px;overflow:hidden}.review-head{display:flex;gap:14px;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #30363d}.review-title{min-width:0}.review-title strong,.review-title code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.review-title code{font-size:12px;color:#8b949e;margin-top:4px}.badges{display:flex;flex-wrap:wrap;gap:6px}.badge{border:1px solid #30363d;border-radius:999px;padding:3px 8px;font-size:12px}.review-mode{color:#d2a8ff}.running{color:#3fb950}.stopped{color:#8b949e}.stale{color:#f85149}.open{color:#f2cc60}.accepted{color:#58a6ff}.to_verify{color:#bc8cff}.ready{color:#3fb950}.threads{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1px;background:#30363d}.thread{background:#0d1117;padding:12px 16px;min-width:0}.thread-top{display:flex;justify-content:space-between;gap:12px;font-size:12px}.thread-path{font-family:ui-monospace,monospace;color:#58a6ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.message{font-size:13px;line-height:1.45;margin-top:8px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.actions{display:flex;gap:8px;flex-shrink:0}.actions a,.actions button{border:1px solid #30363d;background:transparent;border-radius:6px;color:#e6edf3;text-decoration:none;padding:7px 10px;font:inherit;font-size:12px;cursor:pointer}.actions .close-viewer{border-color:#6e3035;color:#ff7b72}.actions .close-viewer:hover{background:#3d1f24;border-color:#f85149}.actions button:disabled{cursor:wait;opacity:.55}.empty{padding:36px;text-align:center;color:#8b949e}@media(max-width:700px){.layout{padding:12px}.review-head{align-items:flex-start;flex-direction:column}.threads{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-  <header><h1>↪ difit reviews</h1><span id="summary" class="muted">Loading…</span></header>
+  <header><h1>↪ difit reviews</h1><div class="top-actions"><span id="summary" class="muted">Loading…</span><form method="post" action="/auth/logout"><button class="logout" type="submit">Log out</button></form></div></header>
   <main class="layout"><div class="toolbar"><button data-filter="active" class="active">Active</button><button data-filter="all">All</button></div><div id="reviews"></div></main>
   <script>
     const root=document.getElementById('reviews');const summary=document.getElementById('summary');let reviews=[];let filter='active';
@@ -203,21 +219,33 @@ export async function startHubServer(
   options: HubServerOptions = {},
 ): Promise<{ port: number; url: string; server: Server }> {
   const app = express();
+  const auth = options.authService ?? getDefaultAuthService();
+  await auth.initialize();
   app.enable('strict routing');
   const publicOrigin = options.publicOrigin ? new URL(options.publicOrigin) : undefined;
   if (publicOrigin && publicOrigin.protocol !== 'http:' && publicOrigin.protocol !== 'https:') {
     throw new Error(`Unsupported public origin protocol: ${publicOrigin.protocol}`);
   }
+  if (publicOrigin) await auth.configurePublicOrigin(publicOrigin.origin);
   app.use(restrictRequestHosts([host, ...(publicOrigin ? [publicOrigin.hostname] : [])]));
   app.use(
     restrictRequestOrigins(publicOrigin ? [publicOrigin.origin] : [], publicOrigin === undefined),
   );
   app.use(restrictCrossSiteBrowserRequests());
   app.use(setSecurityHeaders({ nonceInlineScript: true }));
+  app.use(express.urlencoded({ extended: false, limit: '4kb' }));
+  installBrowserLoginRoutes(app, auth, publicOrigin);
+  app.use(
+    requireAuthentication(auth, {
+      ...(publicOrigin?.protocol === 'https:' ? { loginPath: '/auth/login' } : {}),
+    }),
+  );
+  app.use(requireBrowserMutationOrigin());
+  app.post('/auth/logout', logoutHandler(auth));
   const clients = new Set<import('express').Response>();
 
   app.get('/api/reviews', async (_req, res) => {
-    res.json(await getHubReviews());
+    res.json(await getHubReviews(auth));
   });
   app.post('/api/reviews/:reviewId/close', async (req, res) => {
     const registration = (await readReviewRegistrations()).find(
@@ -227,7 +255,7 @@ export async function startHubServer(
       res.status(404).json({ error: 'Review not found' });
       return;
     }
-    if (!(await isReviewServerRunning(registration))) {
+    if (!(await isReviewServerRunning(registration, auth))) {
       res.status(409).json({ error: 'Review viewer is not running' });
       return;
     }
@@ -248,8 +276,14 @@ export async function startHubServer(
     res.flushHeaders();
     clients.add(res);
     res.write('data: ready\n\n');
+    const stopAuthMonitor = monitorAuthenticatedConnection(
+      auth,
+      getAuthenticatedPrincipal(res.locals as Record<string, unknown>),
+      () => res.end(),
+    );
     const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 15_000);
     res.on('close', () => {
+      stopAuthMonitor();
       clearInterval(heartbeat);
       clients.delete(res);
     });

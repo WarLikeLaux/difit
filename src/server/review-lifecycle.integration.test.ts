@@ -10,11 +10,25 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DiffMode } from '../types/watch.js';
 
-import { getHubReviews, startHubServer } from './hub-server.js';
+import { AuthService } from './auth.js';
 import { writeCommentSessions } from './comment-storage.js';
-import { startServer } from './server.js';
+import {
+  getHubReviews as getSecuredHubReviews,
+  startHubServer as startSecuredHubServer,
+  type HubServerOptions,
+} from './hub-server.js';
+import { startServer as startSecuredServer, type ServerOptions } from './server.js';
 
 globalThis.fetch = fetch as never;
+const testAuthService = new AuthService({ disabled: true });
+const startServer = (options: ServerOptions) =>
+  startSecuredServer({ ...options, authService: options.authService ?? testAuthService });
+const startHubServer = (port: number, host: string, options: HubServerOptions = {}) =>
+  startSecuredHubServer(port, host, {
+    ...options,
+    authService: options.authService ?? testAuthService,
+  });
+const getHubReviews = () => getSecuredHubReviews(testAuthService);
 
 async function closeServer(server: Server | undefined): Promise<void> {
   if (!server?.listening) return;

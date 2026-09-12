@@ -20,6 +20,8 @@ import {
   readStdin,
 } from './utils.js';
 import { createCommentCommand } from './comment.js';
+import { createAuthCommand } from './auth-command.js';
+import { authenticatedFetch } from './auth-client.js';
 import { createHubCommand } from './hub.js';
 import { getPrPatch, getPrCommentImports } from './github.js';
 import { detectGitLabMergeRequestUrl, normalizeGitLabMergeRequestUrl } from './gitlab.js';
@@ -102,6 +104,7 @@ program
   .description('A lightweight Git diff viewer with GitHub-like interface')
   .version(pkg.version, '-v, --version', 'output the version number')
   .enablePositionalOptions()
+  .addCommand(createAuthCommand())
   .addCommand(createCommentCommand())
   .addCommand(createHubCommand())
   .argument(
@@ -232,7 +235,7 @@ program
 
       if (stdinDiff) {
         // Start server with stdin diff (including --pr patch)
-        const { url, port } = await startServer({
+        const { url, browserUrl, port } = await startServer({
           stdinDiff,
           preferredPort: options.port,
           host: options.host,
@@ -251,6 +254,7 @@ program
         }
 
         console.log(`\n🚀 difit server started on ${url}`);
+        if (browserUrl) console.log(`🌐 difit browser available at ${browserUrl}`);
         console.log(`📋 Reviewing: ${stdinReviewLabel}`);
         if (options.keepAlive) {
           console.log('🔒 Keep-alive mode: server will stay running after browser disconnects');
@@ -303,7 +307,7 @@ program
         process.exit(1);
       }
 
-      const { url, port, isEmpty } = await startServer({
+      const { url, browserUrl, port, isEmpty } = await startServer({
         selection,
         preferredPort: options.port,
         host: options.host,
@@ -326,6 +330,7 @@ program
       }
 
       console.log(`\n🚀 difit server started on ${url}`);
+      if (browserUrl) console.log(`🌐 difit browser available at ${browserUrl}`);
       console.log(`📋 Reviewing: ${selection.targetCommitish}`);
 
       if (options.keepAlive) {
@@ -352,7 +357,7 @@ program
 
         // Try to fetch comments before shutting down
         try {
-          const response = await fetch(`http://localhost:${port}/api/comments-output`);
+          const response = await authenticatedFetch(`http://localhost:${port}/api/comments-output`);
           if (response.ok) {
             const data = await response.text();
             if (data.trim()) {

@@ -8,12 +8,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Set environment variable to skip fetch mocking
 process.env.VITEST_SERVER_TEST = 'true';
 
-import { startServer } from './server.js';
+import { AuthService } from './auth.js';
+import { startServer as startSecuredServer, type ServerOptions } from './server.js';
 import type { CommentImport } from '../types/diff.js';
 
 // Add fetch polyfill for Node.js test environment
 const { fetch } = await import('undici');
 globalThis.fetch = fetch as any;
+const testAuthService = new AuthService({ disabled: true });
+const startServer = (options: ServerOptions) =>
+  startSecuredServer({ ...options, authService: options.authService ?? testAuthService });
 const parserInstances = vi.hoisted(() => [] as any[]);
 
 // Helper function to get available port

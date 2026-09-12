@@ -33,6 +33,7 @@ vi.mock('fs', async (importOriginal) => {
     ...actual,
     readFileSync: vi.fn(),
     realpathSync: vi.fn((path: string) => path),
+    statSync: vi.fn(() => ({ size: 1 })),
   };
 });
 
@@ -41,6 +42,7 @@ describe('GitDiffParser', () => {
   let mockExecFileSync: any;
   let mockReadFileSync: any;
   let mockRealpathSync: any;
+  let mockStatSync: any;
 
   beforeEach(async () => {
     parser = new GitDiffParser(TEST_REPO_PATH);
@@ -52,6 +54,7 @@ describe('GitDiffParser', () => {
     mockExecFileSync = childProcess.execFileSync;
     mockReadFileSync = fs.readFileSync;
     mockRealpathSync = fs.realpathSync;
+    mockStatSync = fs.statSync;
     mockRealpathSync.mockImplementation((path: string) => path);
   });
 
@@ -171,6 +174,16 @@ describe('GitDiffParser', () => {
 
       await expect(parser.getBlobContent('link.txt', 'working')).rejects.toThrow(
         'File path outside repository',
+      );
+
+      expect(mockReadFileSync).not.toHaveBeenCalled();
+    });
+
+    it('rejects oversized working tree blobs before reading them', async () => {
+      mockStatSync.mockReturnValue({ size: 10 * 1024 * 1024 + 1 });
+
+      await expect(parser.getBlobContent('large-file.jpg', 'working')).rejects.toThrow(
+        'Image file large-file.jpg is too large to display (over 10MB limit)',
       );
 
       expect(mockReadFileSync).not.toHaveBeenCalled();
