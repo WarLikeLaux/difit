@@ -1359,7 +1359,7 @@ export async function startServer(options: ServerOptions): Promise<{
   const { port, url, server } = await startServerWithFallback(
     app,
     options.preferredPort || 4966,
-    options.host || 'localhost',
+    !options.host || options.host === 'localhost' ? '127.0.0.1' : options.host,
   );
 
   if (reviewContext) {
@@ -1419,7 +1419,7 @@ async function startServerWithFallback(
     // https://expressjs.com/en/5x/api.html#app.listen
     // so, an error will be an instance of NodeJS.ErrnoException
     const server = app.listen(preferredPort, host, (err: NodeJS.ErrnoException | undefined) => {
-      const displayHost = host === '0.0.0.0' ? 'localhost' : host;
+      const displayHost = host === '0.0.0.0' || host === '127.0.0.1' ? 'localhost' : host;
       const url = `http://${displayHost}:${preferredPort}`;
       if (!err) {
         resolve({ port: preferredPort, url, server });
