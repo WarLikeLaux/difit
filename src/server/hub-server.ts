@@ -115,28 +115,34 @@ async function isReviewServerRunning(
   registration: ReviewRegistration,
   auth = getDefaultAuthService(),
 ): Promise<boolean> {
-  try {
-    const authorization = await auth.getCliAuthorizationHeader();
-    const response = await fetch(`http://127.0.0.1:${registration.port}/api/review-context`, {
-      headers: { Authorization: authorization },
-      signal: AbortSignal.timeout(350),
-    });
-    if (response.ok) {
-      const data = (await response.json()) as { id?: unknown };
-      return data.id === registration.id;
-    }
-    if (response.status !== 404 || !registration.reviewUrl) return false;
+  const authorization = await auth.getCliAuthorizationHeader();
 
-    const legacyResponse = await fetch(`http://127.0.0.1:${registration.port}/api/diff`, {
-      headers: { Authorization: authorization },
-      signal: AbortSignal.timeout(350),
-    });
-    if (!legacyResponse.ok) return false;
-    const legacyData = (await legacyResponse.json()) as { reviewUrl?: unknown };
-    return legacyData.reviewUrl === registration.reviewUrl;
-  } catch {
-    return false;
+  for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+    try {
+      const response = await fetch(`http://${host}:${registration.port}/api/review-context`, {
+        headers: { Authorization: authorization },
+        signal: AbortSignal.timeout(350),
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { id?: unknown };
+        if (data.id === registration.id) return true;
+        continue;
+      }
+      if (response.status !== 404 || !registration.reviewUrl) continue;
+
+      const legacyResponse = await fetch(`http://${host}:${registration.port}/api/diff`, {
+        headers: { Authorization: authorization },
+        signal: AbortSignal.timeout(350),
+      });
+      if (!legacyResponse.ok) continue;
+      const legacyData = (await legacyResponse.json()) as { reviewUrl?: unknown };
+      if (legacyData.reviewUrl === registration.reviewUrl) return true;
+    } catch {
+      // The viewer may be listening on another loopback address family.
+    }
   }
+
+  return false;
 }
 
 export async function getHubReviews(auth = getDefaultAuthService()): Promise<HubReview[]> {
