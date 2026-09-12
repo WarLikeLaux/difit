@@ -54,8 +54,9 @@ build dependencies. The transitive `@babel/core` used only by the lint plugin is
 Babel 7 release rather than hidden by a severity-wide audit exception. CI also runs CodeQL, scans
 the current working tree and complete Git history in separate steps with a pinned/checksummed
 Gitleaks binary in redacted mode, and verifies that Actions are pinned and checkout credentials are
-not persisted. The weekly security job reports advisories; it never installs dependency updates
-automatically.
+not persisted. The weekly schedule runs from the repository's default `custom` branch, so the
+scans use that branch's source, scripts, and lockfile. The job reports advisories; it never installs
+dependency updates automatically.
 
 ## Reporting and limitations
 
