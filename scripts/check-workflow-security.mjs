@@ -27,6 +27,9 @@ for (const name of workflowNames) {
       if (!/persist-credentials:\s*false/.test(followingStep)) {
         findings.push(`${name}:${index + 1}: checkout persists credentials`);
       }
+      if (name === 'ci.yml' && !/fetch-depth:\s*0/.test(followingStep)) {
+        findings.push(`${name}:${index + 1}: CI tests require complete Git history`);
+      }
     }
   }
 }
@@ -36,6 +39,6 @@ if (findings.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    `Checked ${workflowNames.length} workflows: pinned actions and checkout credentials OK`,
+    `Checked ${workflowNames.length} workflows: pinned actions, checkout credentials, and CI history OK`,
   );
 }
