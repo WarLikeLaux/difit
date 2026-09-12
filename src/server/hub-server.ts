@@ -48,6 +48,7 @@ export interface HubReview {
 
 interface HubServerOptions {
   terminateProcess?: (pid: number) => void;
+  publicOrigin?: string;
 }
 
 function normalizeExternalReviewUrl(value: string | undefined): string | undefined {
@@ -203,8 +204,12 @@ export async function startHubServer(
 ): Promise<{ port: number; url: string; server: Server }> {
   const app = express();
   app.enable('strict routing');
-  app.use(restrictRequestHosts(['difit.local', host]));
-  app.use(restrictRequestOrigins(['difit.local']));
+  const publicOrigin = options.publicOrigin ? new URL(options.publicOrigin) : undefined;
+  if (publicOrigin && publicOrigin.protocol !== 'http:' && publicOrigin.protocol !== 'https:') {
+    throw new Error(`Unsupported public origin protocol: ${publicOrigin.protocol}`);
+  }
+  app.use(restrictRequestHosts([host, ...(publicOrigin ? [publicOrigin.hostname] : [])]));
+  app.use(restrictRequestOrigins(publicOrigin ? [publicOrigin.origin] : []));
   app.use(restrictCrossSiteBrowserRequests());
   app.use(setSecurityHeaders({ nonceInlineScript: true }));
   const clients = new Set<import('express').Response>();
@@ -264,7 +269,12 @@ export async function startHubServer(
 
     const prefix = `/reviews/${encodeURIComponent(registration.id)}`;
     const upstreamPath = req.originalUrl.slice(prefix.length) || '/';
-    const headers = { ...req.headers, host: `127.0.0.1:${registration.port}` };
+    const upstreamOrigin = `http://127.0.0.1:${registration.port}`;
+    const headers = {
+      ...req.headers,
+      host: `127.0.0.1:${registration.port}`,
+      ...(req.get('origin') ? { origin: upstreamOrigin } : {}),
+    };
     const upstream = createHttpRequest(
       {
         hostname: '127.0.0.1',

@@ -7,9 +7,15 @@ export function createHubCommand(): Command {
     .description('Run the local dashboard for registered difit reviews')
     .option('--port <port>', 'dashboard port', (value) => Number.parseInt(value, 10), 4965)
     .option('--host <host>', 'dashboard host', '127.0.0.1')
-    .action(async (options: { port: number; host: string }) => {
+    .option(
+      '--public-origin <origin>',
+      'trusted reverse-proxy origin (for example, https://reviews.local)',
+    )
+    .action(async (options: { port: number; host: string; publicOrigin?: string }) => {
       try {
-        const result = await startHubServer(options.port, options.host);
+        const result = await startHubServer(options.port, options.host, {
+          publicOrigin: options.publicOrigin,
+        });
         console.log(`difit hub started on ${result.url}`);
       } catch (error) {
         console.error(

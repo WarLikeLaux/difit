@@ -1,5 +1,7 @@
 import type { RequestHandler } from 'express';
+import helmet from 'helmet';
 import { randomBytes } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
@@ -18,10 +20,16 @@ export function restrictRequestHosts(additionalHosts: readonly string[] = []): R
   };
 }
 
-export function restrictRequestOrigins(additionalHosts: readonly string[] = []): RequestHandler {
-  const allowedProxyHosts = new Set(
-    additionalHosts.map((host) => host.trim().toLowerCase()).filter(Boolean),
-  );
+function normalizeHttpOrigin(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`Unsupported trusted origin protocol: ${url.protocol}`);
+  }
+  return url.origin;
+}
+
+export function restrictRequestOrigins(additionalOrigins: readonly string[] = []): RequestHandler {
+  const allowedProxyOrigins = new Set(additionalOrigins.map(normalizeHttpOrigin));
 
   return (req, res, next) => {
     const origin = req.get('origin');
@@ -30,16 +38,19 @@ export function restrictRequestOrigins(additionalHosts: readonly string[] = []):
       return;
     }
 
-    let originHost: string;
+    let parsedOrigin: string;
     try {
-      originHost = new URL(origin).host.toLowerCase();
+      parsedOrigin = normalizeHttpOrigin(origin);
     } catch {
       res.status(403).json({ error: 'Origin is not allowed' });
       return;
     }
 
-    const requestHost = req.get('host')?.trim().toLowerCase();
-    if (originHost !== requestHost && !allowedProxyHosts.has(originHost)) {
+    const requestHost = req.get('host');
+    const requestOrigin = requestHost
+      ? normalizeHttpOrigin(`${req.protocol}://${requestHost}`)
+      : undefined;
+    if (parsedOrigin !== requestOrigin && !allowedProxyOrigins.has(parsedOrigin)) {
       res.status(403).json({ error: 'Origin is not allowed' });
       return;
     }
@@ -68,39 +79,48 @@ export function restrictCrossSiteBrowserRequests(): RequestHandler {
   };
 }
 
-const VIEWER_CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "base-uri 'none'",
-  "connect-src 'self'",
-  "font-src 'self' data:",
-  "form-action 'none'",
-  "frame-ancestors 'none'",
-  "img-src 'self' blob: data:",
-  "object-src 'none'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "worker-src 'self' blob:",
-].join('; ');
-
 export function setSecurityHeaders(options: { nonceInlineScript?: boolean } = {}): RequestHandler {
-  return (_req, res, next) => {
+  const scriptSrc: Array<string | ((req: IncomingMessage, res: ServerResponse) => string)> = [
+    "'self'",
+  ];
+  if (options.nonceInlineScript) {
+    scriptSrc.push(
+      (_req, res) =>
+        `'nonce-${(res as ServerResponse & { locals?: { cspNonce?: string } }).locals?.cspNonce ?? ''}'`,
+    );
+  }
+
+  const securityHeaders = helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'none'"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", 'data:'],
+        formAction: ["'none'"],
+        frameAncestors: ["'none'"],
+        imgSrc: ["'self'", 'blob:', 'data:'],
+        objectSrc: ["'none'"],
+        scriptSrc,
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        workerSrc: ["'self'", 'blob:'],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: 'same-origin' },
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+    originAgentCluster: true,
+    referrerPolicy: { policy: 'no-referrer' },
+    strictTransportSecurity: false,
+    xFrameOptions: { action: 'deny' },
+  });
+
+  return (req, res, next) => {
     const nonce = options.nonceInlineScript ? randomBytes(18).toString('base64') : undefined;
-    const contentSecurityPolicy = nonce
-      ? VIEWER_CONTENT_SECURITY_POLICY.replace(
-          "script-src 'self'",
-          `script-src 'self' 'nonce-${nonce}'`,
-        )
-      : VIEWER_CONTENT_SECURITY_POLICY;
     if (nonce) res.locals.cspNonce = nonce;
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Security-Policy', contentSecurityPolicy);
-    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-    res.setHeader('Origin-Agent-Cluster', '?1');
-    res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    next();
+    securityHeaders(req, res, next);
   };
 }

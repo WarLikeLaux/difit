@@ -512,6 +512,15 @@ describe('Server Integration Tests', () => {
       await expect(response.json()).resolves.toEqual({ error: 'Origin is not allowed' });
     });
 
+    it('requires the Origin scheme, host, and port to match exactly', async () => {
+      const response = await fetch(`http://localhost:${port}/api/diff`, {
+        headers: { Origin: `https://localhost:${port}` },
+      });
+
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({ error: 'Origin is not allowed' });
+    });
+
     it('rejects passive browser requests from another site without relying on Origin', async () => {
       const response = await fetch(`http://localhost:${port}/api/diff`, {
         headers: { 'Sec-Fetch-Site': 'cross-site' },
@@ -1585,7 +1594,7 @@ describe('Server Integration Tests', () => {
   });
 
   describe('CORS configuration', () => {
-    it('allows only the viewer origin or the trusted reverse-proxy origin', async () => {
+    it('allows only the exact viewer origin', async () => {
       const result = await startServer({
         selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
       });
@@ -1617,8 +1626,7 @@ describe('Server Integration Tests', () => {
       const proxyOrigin = await fetch(`http://localhost:${result.port}/api/diff`, {
         headers: { Origin: 'https://difit.local' },
       });
-      expect(proxyOrigin.status).toBe(200);
-      expect(proxyOrigin.headers.get('Access-Control-Allow-Origin')).toBe('https://difit.local');
+      expect(proxyOrigin.status).toBe(403);
     });
 
     it('sets restrictive browser security and cache headers', async () => {
@@ -1634,6 +1642,8 @@ describe('Server Integration Tests', () => {
       expect(response.headers.get('Origin-Agent-Cluster')).toBe('?1');
       expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
       expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+      expect(response.headers.get('X-Powered-By')).toBeNull();
+      expect(response.headers.get('X-DNS-Prefetch-Control')).toBe('off');
       expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'self'");
       expect(response.headers.get('Content-Security-Policy')).toContain(
         "img-src 'self' blob: data:",

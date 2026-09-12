@@ -135,6 +135,7 @@ describe('branch review lifecycle', () => {
 
     let terminatedPid: number | undefined;
     const hub = await startHubServer(9345, '127.0.0.1', {
+      publicOrigin: 'https://difit.example.test',
       terminateProcess: (pid) => {
         terminatedPid = pid;
       },
@@ -150,6 +151,13 @@ describe('branch review lifecycle', () => {
     expect(hubPageResponse.headers.get('Content-Security-Policy')).not.toContain(
       "script-src 'self' 'unsafe-inline'",
     );
+    const wrongPublicOrigin = await fetch(`http://localhost:${hub.port}/api/reviews`, {
+      headers: {
+        Host: 'difit.example.test',
+        Origin: 'http://difit.example.test',
+      },
+    });
+    expect(wrongPublicOrigin.status).toBe(403);
     const hubResponse = await fetch(`http://localhost:${hub.port}/api/reviews`);
     expect(hubResponse.status).toBe(200);
     const hubReviews = (await hubResponse.json()) as Array<{ id: string; viewerUrl?: string }>;
@@ -157,6 +165,12 @@ describe('branch review lifecycle', () => {
     expect(hubReviews[0]?.viewerUrl).toBe(`/reviews/${hubReviews[0]?.id}/`);
     const proxiedDiff = await fetch(
       `http://localhost:${hub.port}${hubReviews[0]?.viewerUrl}api/diff`,
+      {
+        headers: {
+          Host: 'difit.example.test',
+          Origin: 'https://difit.example.test',
+        },
+      },
     );
     expect(proxiedDiff.status).toBe(200);
     expect(proxiedDiff.headers.get('X-Difit-Review-Label')).toBe('feature/one');

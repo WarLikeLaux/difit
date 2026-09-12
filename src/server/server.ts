@@ -178,7 +178,7 @@ export async function startServer(
   };
 
   app.use(restrictRequestHosts(options.host ? [options.host] : []));
-  app.use(restrictRequestOrigins(['difit.local']));
+  app.use(restrictRequestOrigins());
   app.use(restrictCrossSiteBrowserRequests());
   app.use(setSecurityHeaders());
   app.use(express.json());
