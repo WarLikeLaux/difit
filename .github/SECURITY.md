@@ -19,6 +19,9 @@ by the authenticated user remain intended functionality.
 - Hub and viewer ports bind to loopback by default, but both still enforce authentication, Host,
   exact Origin, and Fetch Metadata checks. Forwarded headers are not trusted to construct the
   public origin. Direct HTTP viewer ports intentionally provide no browser-login downgrade.
+- Responses use `Referrer-Policy: same-origin` so native same-origin login and logout forms retain
+  a verifiable Origin. Cross-origin referrers remain suppressed, and `Origin: null` is not accepted
+  globally.
 
 Authentication state is stored under `${DIFIT_CONFIG_DIR:-~/.difit}/auth`. Directories are mode
 `0700`; key, CLI credential, origin, and session files are mode `0600`. The browser access key must
@@ -46,10 +49,13 @@ extraction.
 
 The workspace lockfile covers the root package and the bundled VS Code extension. pnpm's build
 allowlist limits dependency install scripts to the native/build tools required by this project.
-CI uses frozen installs, audits production dependency metadata, runs CodeQL, scans the working tree
-and Git history with a pinned/checksummed Gitleaks binary in redacted mode, and verifies that Actions
-are pinned and checkout credentials are not persisted. The weekly security job reports advisories;
-it never installs dependency updates automatically.
+CI uses frozen installs and fails on low-or-higher advisories in both production and development/
+build dependencies. The transitive `@babel/core` used only by the lint plugin is pinned to a patched
+Babel 7 release rather than hidden by a severity-wide audit exception. CI also runs CodeQL, scans
+the current working tree and complete Git history in separate steps with a pinned/checksummed
+Gitleaks binary in redacted mode, and verifies that Actions are pinned and checkout credentials are
+not persisted. The weekly security job reports advisories; it never installs dependency updates
+automatically.
 
 ## Reporting and limitations
 

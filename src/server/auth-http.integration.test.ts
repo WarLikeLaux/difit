@@ -196,6 +196,7 @@ describe('browser and CLI authentication', () => {
     const page = await fetch(`${hubUrl}/`, { headers: authenticatedHeaders });
     expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
     expect(page.headers.get('cross-origin-resource-policy')).toBe('same-origin');
+    expect(page.headers.get('referrer-policy')).toBe('same-origin');
 
     await closeServer(hubServer);
     hubServer = undefined;

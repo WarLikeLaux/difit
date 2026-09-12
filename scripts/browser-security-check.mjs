@@ -156,19 +156,22 @@ try {
   page.setDefaultTimeout(5_000);
   page.setDefaultNavigationTimeout(5_000);
   const origin = `https://difit.test:${proxyPort}`;
-  const session = await auth.createBrowserSession(await auth.getAccessKey());
-  if (!session) throw new Error('Could not create the synthetic browser session');
-  await context.addCookies([
-    {
-      name: '__Host-difit_session',
-      value: session,
-      url: origin,
-      httpOnly: true,
-      secure: true,
-      sameSite: 'Strict',
-    },
-  ]);
   await page.goto(`${origin}/`);
+  if (!page.url().endsWith('/auth/login')) throw new Error('Anonymous browser skipped login');
+  await page.getByLabel('Access key').fill(await auth.getAccessKey());
+  await Promise.all([
+    page.waitForURL(`${origin}/`),
+    page.getByRole('button', { name: 'Sign in for 30 days' }).click(),
+  ]);
+
+  const authenticatedCookie = (await context.cookies(origin)).find(
+    (cookie) => cookie.name === '__Host-difit_session',
+  );
+  if (!authenticatedCookie) throw new Error('Login form did not create a browser session');
+  const remainingSessionSeconds = authenticatedCookie.expires - Date.now() / 1_000;
+  if (remainingSessionSeconds < 29 * 24 * 60 * 60 || remainingSessionSeconds > 30 * 24 * 60 * 60) {
+    throw new Error('Login form did not create a persistent 30-day browser session');
+  }
 
   const secondTab = await context.newPage();
   await secondTab.goto(`${origin}/`);
@@ -246,8 +249,26 @@ try {
   }, `http://127.0.0.1:${viewer.port}/api/diff`);
   if (directRead.readable) throw new Error('Foreign JavaScript read a direct viewer port');
 
+  await secondTab.bringToFront();
+  await Promise.all([
+    secondTab.waitForURL(`${origin}/auth/login`),
+    secondTab.getByRole('button', { name: 'Log out' }).click(),
+  ]);
+
+  const replayContext = await browser.newContext();
+  try {
+    await replayContext.addCookies([authenticatedCookie]);
+    const replayPage = await replayContext.newPage();
+    await replayPage.goto(`${origin}/`);
+    if (!replayPage.url().endsWith('/auth/login')) {
+      throw new Error('A revoked browser cookie was accepted after logout');
+    }
+  } finally {
+    await replayContext.close();
+  }
+
   console.log(
-    'Browser security check passed: cross-origin read/form/iframe and direct-port access blocked',
+    'Browser security check passed: login, persistent tab, logout/revocation, cross-origin and direct-port isolation',
   );
 } finally {
   await browser?.close();

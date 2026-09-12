@@ -39,7 +39,7 @@ jobs:
         run: pnpm audit --prod --audit-level low
 
       - name: Audit development and build dependencies
-        run: pnpm audit --audit-level moderate
+        run: pnpm audit --audit-level low
 
       - name: Check workflow supply chain
         run: node scripts/check-workflow-security.mjs
@@ -56,9 +56,13 @@ jobs:
           tar --extract --gzip --file "$archive" gitleaks
           install -m 0755 gitleaks "$RUNNER_TEMP/gitleaks"
 
-      - name: Scan working tree and Git history without printing secrets
+      - name: Scan working tree without printing secrets
         run: |
-          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --exit-code 1
+          "$RUNNER_TEMP/gitleaks" dir --redact --no-banner --exit-code 1 .
+
+      - name: Scan Git history without printing secrets
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --exit-code 1 .
 
       - name: Install Chromium for browser security checks
         run: pnpm exec playwright install --with-deps chromium
