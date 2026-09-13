@@ -599,6 +599,41 @@ describe('Server Integration Tests', () => {
       });
     });
 
+    it('allows user-initiated top-level navigation from another site', async () => {
+      const response = await new Promise<{ status: number; contentType: string }>(
+        (resolve, reject) => {
+          const request = createHttpRequest(
+            {
+              hostname: '127.0.0.1',
+              port,
+              path: '/',
+              headers: {
+                Referer: 'https://hapi.local/',
+                'Sec-Fetch-Site': 'cross-site',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-User': '?1',
+              },
+            },
+            (result) => {
+              result.resume();
+              result.on('end', () =>
+                resolve({
+                  status: result.statusCode ?? 0,
+                  contentType: String(result.headers['content-type'] ?? ''),
+                }),
+              );
+            },
+          );
+          request.on('error', reject);
+          request.end();
+        },
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.contentType).toContain('text/html');
+    });
+
     it('rejects custom editor commands from HTTP requests', async () => {
       const response = await fetch(`http://localhost:${port}/api/open-in-editor`, {
         method: 'POST',

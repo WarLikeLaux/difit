@@ -77,7 +77,13 @@ export function restrictRequestOrigins(
 export function restrictCrossSiteBrowserRequests(): RequestHandler {
   return (req, res, next) => {
     const fetchSite = req.get('sec-fetch-site')?.toLowerCase();
-    if (fetchSite === 'cross-site' || fetchSite === 'same-site') {
+    const isCrossSite = fetchSite === 'cross-site' || fetchSite === 'same-site';
+    const isUserNavigation =
+      req.method === 'GET' &&
+      req.get('sec-fetch-mode')?.toLowerCase() === 'navigate' &&
+      req.get('sec-fetch-dest')?.toLowerCase() === 'document' &&
+      req.get('sec-fetch-user') === '?1';
+    if (isCrossSite && !isUserNavigation) {
       res.status(403).json({ error: 'Cross-site browser requests are not allowed' });
       return;
     }
