@@ -165,9 +165,10 @@ describe('branch review lifecycle', () => {
     expect(hubPageResponse.headers.get('Content-Security-Policy')).not.toContain(
       "script-src 'self' 'unsafe-inline'",
     );
-    expect(hubPage).toContain('Connected now');
-    expect(hubPage).toContain('Other reviews');
-    expect(hubPage).toContain('Grouped by repository, newest reply first');
+    expect(hubPage).toContain('Search reviews');
+    expect(hubPage).toContain('Recent activity');
+    expect(hubPage).toContain('Filter by repository');
+    expect(hubPage).not.toContain('Log out');
     expect(hubPage).not.toContain('data-filter=');
     expect(hubPage).not.toContain('Technical details');
     expect(hubPage).not.toContain('data-all-reviews');
