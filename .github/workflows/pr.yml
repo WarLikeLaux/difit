@@ -2,9 +2,9 @@ name: PR Checks
 
 on:
   push:
-    branches: [teletype]
+    branches: [custom]
   pull_request:
-    branches: [main, teletype]
+    branches: [main, custom]
 
 permissions:
   contents: read

@@ -2,9 +2,9 @@ name: Security
 
 on:
   push:
-    branches: [teletype]
+    branches: [custom]
   pull_request:
-    branches: [main, teletype]
+    branches: [main, custom]
   schedule:
     - cron: '37 4 * * 3'
   workflow_dispatch:
