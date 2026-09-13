@@ -168,6 +168,8 @@ describe('branch review lifecycle', () => {
     expect(hubPage).toContain('Connected now');
     expect(hubPage).toContain('All reviews');
     expect(hubPage).not.toContain('data-filter=');
+    expect(hubPage).not.toContain('Technical details');
+    expect(hubPage).not.toContain('data-all-reviews');
     const wrongPublicOrigin = await fetch(`http://localhost:${hub.port}/api/reviews`, {
       headers: {
         Host: 'difit.example.test',
