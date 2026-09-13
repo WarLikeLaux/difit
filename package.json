@@ -30,7 +30,8 @@
     "dist",
     "!dist/client/site-data",
     "!dist/site",
-    "README.md"
+    "README.md",
+    "README-ru.md"
   ],
   "type": "module",
   "main": "./dist/cli/index.js",

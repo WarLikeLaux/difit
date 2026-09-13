@@ -3,400 +3,161 @@
 </h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/difit"><img src="https://img.shields.io/npm/v/difit.svg" alt="npm version"></a>
-  <a href="https://github.com/yoshiko-pg/difit/actions/workflows/pr.yml"><img src="https://github.com/yoshiko-pg/difit/actions/workflows/pr.yml/badge.svg" alt="CI"></a>
+  <strong>English</strong> · <a href="./README-ru.md">Русский</a>
 </p>
 
-<p align="center">
-  English | <a href="./README.ja.md">日本語</a> | <a href="./README.zh.md">简体中文</a> | <a href="./README.ko.md">한국어</a>
-</p>
+# Difit maintained fork
 
-![difit screenshot](docs/images/screenshot.png)
+This is a maintained fork of [yoshiko-pg/difit](https://github.com/yoshiko-pg/difit), built for persistent local reviews shared between a browser and coding agents. It keeps difit’s GitHub-style diff viewer and adds a review hub, durable feedback delivery, a Codex plugin, and an MCP server.
 
-**difit** is a CLI tool that lets you view and review local git diffs with a GitHub-style viewer. In addition to clean visuals, comments can be copied as prompts for AI. The local code review tool for the AI era!
+Read the [upstream README](https://github.com/yoshiko-pg/difit#readme) for the full product overview, supported diff formats, keyboard shortcuts, and standard CLI usage. This README covers the fork-specific behavior and setup.
 
-## ⚡ Quick Start
+## What this fork changes
 
-Try it first
+| Area              | Fork behavior                                                                                        | Practical effect                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Review hub        | `difit hub` serves reviews from multiple repositories on one origin                                  | Old and current reviews remain easy to find without tracking viewer ports                                    |
+| Offline reviews   | The hub stores the last rendered diff, comments, and review state                                    | A review stays readable when its viewer stops or the checkout changes branch                                 |
+| Agent inbox       | User replies and `To verify` transitions enter a durable, acknowledged event queue                   | Feedback waits for the agent attached to that exact review and survives restarts                             |
+| Review identity   | Repository, branch, and diff base are part of the review identity                                    | Comments from an old branch are not delivered to an unrelated working tree                                   |
+| Agent integration | One Codex plugin contains the `difit` skill and a stdio MCP server                                   | Agents can open reviews, read events, reply, edit comments, and update thread status through one integration |
+| Review workflow   | Threads use `Open`, `Accepted`, `To verify`, `Ready`, and `Resolved` states                          | The agent can return a fix for verification; only the reviewer resolves the thread                           |
+| GitLab            | The CLI detects merge requests and adds file and line links                                          | A local review can jump back to the matching GitLab MR context                                               |
+| Security          | Hub and viewer requests require authentication and enforce host, origin, content, and Git boundaries | Loopback is not treated as a security boundary by itself                                                     |
 
-```bash
-npx difit  # View the latest commit diff in WebUI
-```
+The separate `difit-review` skill was intentionally removed. The maintained skill lives at [`plugins/difit/skills/difit`](plugins/difit/skills/difit), with [`skills/difit`](skills/difit) kept as a repository-local compatibility link.
 
-Install and use
+## Install this fork
 
-```bash
-npm install -g difit
-difit  # View the latest commit diff in WebUI
-```
-
-Enable use from AI agents
-
-```bash
-npx skills add yoshiko-pg/difit # Add the Skills to your agent
-```
-
-The installed `difit` skill opens requested changes, reviews a specific diff or PR with inline
-findings, and handles follow-up comments when the user explicitly opts in to difit.
-
-### Codex plugin and MCP
-
-This repository ships a Codex plugin under `plugins/difit`. Its manifest combines the difit skill
-with a local stdio MCP server started by `difit mcp`. The MCP tools cover the complete agent
-workflow:
-
-- start and discover local reviews;
-- inspect review context and comment threads;
-- retrieve and acknowledge durable feedback events;
-- create, reply to, and edit comments;
-- move threads through the agent-owned review statuses.
-
-The CLI remains available as a standalone interface and as a fallback when the plugin is not
-installed. The MCP server delegates to the same authenticated local review API as the CLI, so both
-interfaces share one state and behavior.
-
-## 🚀 Usage
-
-### Basic Usage
-
-```bash
-difit <target>                    # View single commit diff
-difit <target> [compare-with]     # Compare two commits/branches
-```
-
-### Single commit review
-
-```bash
-difit          # HEAD (latest) commit
-difit 6f4a9b7  # Specific commit
-difit feature  # Latest commit on feature branch
-```
-
-### Compare two commits
-
-```bash
-difit @ main         # Compare with main branch (@ is alias for HEAD)
-difit feature main   # Compare branches
-difit . origin/main  # Compare working directory with remote main
-```
-
-### Special Arguments
-
-difit supports special keywords for common diff scenarios:
-
-```bash
-difit .        # All uncommitted changes (staging area + unstaged)
-difit staged   # Staging area changes
-difit working  # Unstaged changes only
-```
-
-### GitHub PR
-
-```bash
-difit --pr https://github.com/owner/repo/pull/123
-```
-
-`--pr` mode fetches patches by running `gh pr diff --patch` under the hood.
-It also imports unresolved inline review threads from the PR so they appear as startup comments in difit.
-
-Authentication is handled by GitHub CLI:
-
-1. **Login once** (recommended): `gh auth login`
-2. **Token-based auth** (CI/non-interactive): set `GH_TOKEN` or `GITHUB_TOKEN`
-
-#### GitHub Enterprise Server
-
-For Enterprise Server PRs, authenticate GitHub CLI against your Enterprise host:
-
-1. `gh auth login --hostname YOUR-ENTERPRISE-SERVER`
-2. Or set `GH_HOST=YOUR-ENTERPRISE-SERVER` with `GH_TOKEN`/`GITHUB_TOKEN`
-
-### GitLab merge request links
-
-When `glab` is authenticated, difit automatically detects the open merge request for the branch
-being reviewed. You can also provide it explicitly:
-
-```bash
-difit feature-branch develop --merge-base --gitlab-mr https://gitlab.example.com/group/project/-/merge_requests/123
-```
-
-Comment threads then include an **Open Link** action for the matching GitLab diff line and a
-**Copy File** action that copies `path/to/file:line`.
-
-### Initial Comments
-
-You can inject initial review comments when launching difit:
-
-```bash
-difit --comment '{"type":"thread","filePath":"src/example.ts","position":{"side":"new","line":10},"body":"The background for this change is..."}'
-```
-
-`--comment` is repeatable and accepts either a single JSON object or a JSON array. Supported types:
-
-- `thread`: create a new thread at the specified diff position
-- `reply`: add a reply to the latest existing thread at the same diff position
-
-If the same comment already exists, difit skips importing it.
-
-### Stdin
-
-By using a pipe to pass unified diffs via stdin, you can view diffs from any tool with difit.
-
-```bash
-# View diffs from other tools
-diff -u file1.txt file2.txt | difit
-
-# Review saved patches
-cat changes.patch | difit
-
-# Compare against merge base
-git diff --merge-base main feature | difit
-
-# Review an entire existing file as newly added
-git diff -- /dev/null path/to/file | difit
-
-# Explicit stdin mode
-git diff --cached | difit -
-```
-
-Stdin mode is selected with intent-first rules:
-
-- `-` explicitly enables stdin mode
-- If positional arguments (`<target>` / `[compare-with]`) or `--pr` are provided, difit treats the command as Git/PR mode and does not auto-read stdin
-- Auto stdin detection applies only when no explicit mode is selected and stdin is a pipe/file/socket
-
-## ⚙️ CLI Options
-
-| Flag                  | Default         | Description                                                                                             |
-| --------------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
-| `<target>`            | HEAD            | Commit hash, tag, HEAD~n, branch, or special arguments                                                  |
-| `[compare-with]`      | -               | Optional second commit to compare with (shows diff between the two)                                     |
-| `--merge-base`        | false           | Resolve the base revision with `git merge-base` before diffing (Git revision mode only)                 |
-| `--pr <url>`          | -               | GitHub PR URL to review (e.g., https://github.com/owner/repo/pull/123)                                  |
-| `--gitlab-mr <url>`   | auto-detected   | GitLab merge request URL used to open comment file and line links                                       |
-| `--comment <json>`    | -               | Inject initial comments (repeatable; accepts a JSON object or array)                                    |
-| `--port`              | 4966            | Preferred port; falls back to +1 if occupied                                                            |
-| `--host`              | 127.0.0.1       | Host address to bind server to (use 0.0.0.0 for external access)                                        |
-| `--no-open`           | false           | Don't automatically open browser                                                                        |
-| `--clean`             | false           | Clear all existing comments and viewed files on startup                                                 |
-| `--include-untracked` | false           | Automatically include untracked files in diff (only with `.` or `working`)                              |
-| `--keep-alive`        | false           | Keep server running after browser disconnects (stop manually with Ctrl+C)                               |
-| `--background`        | false           | Keep the server running in the background and output JSON connection info                               |
-| `--context <lines>`   | git default (3) | Limit surrounding context lines per change (`0` shows changes only; not available with `--pr` or stdin) |
-
-## 💬 Comment System
-
-difit includes a review comment system that makes it easy to provide feedback to AI coding agents:
-
-1. **Add Comments**: Click the comment button on any diff line or drag to select a range
-2. **Edit Comments**: Edit existing comments with the edit button
-3. **Generate Prompts**: Comments include a "Copy Prompt" button that formats the context for AI coding agents
-4. **Copy All**: Use "Copy All Prompt" to copy all comments in a structured format
-5. **Persistent Storage**: Comments are saved in browser localStorage per commit
-
-For an agent that follows comments continuously, use a durable cursor file:
+This repository does not publish a separate npm package. These upstream commands do **not** install the fork:
 
 ```sh
-difit comment watch --port 4966 --cursor-file ~/.cache/difit/current-review.cursor
-```
-
-The first run records existing user messages and verification requests as the baseline. Later runs
-emit each new or edited `User` message and each new `To verify` transition once as one JSON line,
-including events created while the watcher was stopped. Transient disconnects are retried
-automatically. After checking a `To verify` thread, an agent can mark it `Ready` with
-`difit comment ready <thread-id> --port 4966`; the reviewer can then resolve it explicitly in the UI.
-
-### HAPI wake-up delivery
-
-When a review server is started through the shell of a HAPI agent session, difit inherits
-`HAPI_SESSION_ID` and wakes that session when the browser adds or edits a `User` message, or moves a
-thread to `To verify`. A persistent MCP server may not have the current HAPI session environment,
-so HAPI-bound viewers must be launched through that session's shell; MCP remains available for all
-subsequent review operations. Events are stored durably and coalesced behind one outstanding
-wake-up, so several comments do not interrupt the current turn or create one ping per comment.
-Retries reuse a stable HAPI `localId`, so the hub deduplicates an uncertain or repeated delivery
-instead of showing the same wake-up message twice.
-
-The wake-up message tells the agent to retrieve the pending batch:
-
-```sh
-difit comment events --port 4966
-```
-
-With the Codex plugin installed, the agent calls the MCP `get_events` tool instead.
-
-After handling every event in that response, the agent acknowledges its `throughSeq` value:
-
-```sh
-difit comment ack <throughSeq> --port 4966
-```
-
-The MCP equivalent is `ack_events` with the same port and exact `throughSeq`.
-
-Events arriving after the retrieved batch remain pending and cause a new wake-up after the older
-batch is acknowledged. Unacknowledged wake-ups are retried, and pending events survive difit server
-restarts. Outside HAPI, the existing `comment watch` workflow remains available.
-
-### Comment Prompt Format
-
-```sh
-src/components/Button.tsx:L42   # This line is automatically added
-Make this variable name more descriptive
-```
-
-For range selections:
-
-```sh
-src/components/Button.tsx:L42-L48   # This line is automatically added
-This section is unnecessary
-```
-
-### Review dashboard
-
-GitLab reviews opened from explicit head/base commits are stable snapshots and remain available
-when the checkout changes branch. Working-tree reviews (`.`, `working`, or `staged`) stay bound to
-their original branch and become read-only after a branch switch so comments cannot be written
-into the wrong review.
-
-Run the local dashboard to see registered reviews and their active threads:
-
-```sh
-difit hub --host 127.0.0.1 --port 4965
-```
-
-Every review keeps its last successfully rendered diff as a private snapshot. Reviews therefore
-remain readable and accept comments at `/reviews/<review-id>/` even when their agent process is
-offline or the checkout has moved to another branch. Offline comments stay in the review's durable
-event queue; the next agent attached to that exact review receives them in order. A checkout path
-alone never selects an agent, so feedback from an old branch cannot leak into the current branch.
-
-The dashboard exposes review state rather than worker state: `Agent connected`, `Agent offline`,
-and the number of waiting messages. Commit expressions and repository paths live under
-**Technical details** instead of being used as review titles. **Delete review** permanently removes
-only that review's snapshot, comments, and pending events; internal localhost ports and viewer
-process controls are not part of the browser workflow.
-
-### Local access security
-
-Browser access is intentionally routed through one configured HTTPS hub origin. On first use,
-retrieve the independently generated browser key in a trusted terminal and enter it on the login
-page:
-
-```sh
-difit auth key
-difit hub --host 127.0.0.1 --port 4965 --public-origin https://difit.local
-```
-
-The browser then receives a host-only, `HttpOnly`, `Secure`, `SameSite=Lax` session for up to 30
-days. The session survives ordinary restarts. Use the UI's **Log out** action to revoke only the
-current browser session, `difit auth revoke` to revoke all browser sessions, or `difit auth rotate`
-to replace the browser key and revoke all existing sessions. CLI commands use a separate private
-credential automatically; `difit auth rotate-cli` replaces it and disconnects existing watchers.
-
-Direct viewer ports bind to loopback but remain authenticated. They do not offer a weaker HTTP
-browser login because browser cookies are not isolated by port. Open reviews through the HTTPS hub;
-CLI commands authenticate to direct viewer ports without prompting or placing credentials in URLs.
-
-See [the fork security policy](.github/SECURITY.md) for the trust model, storage, and network
-boundaries.
-
-## 🤖 Calling from Agents
-
-You can install the following Skills to work with difit from AI agents.
-
-```sh
+npx difit
+npm install --global difit
 npx skills add yoshiko-pg/difit
 ```
 
-The installed `difit` skill opens requested changes, reviews a specific diff or PR with inline
-findings, and handles follow-up comments when the user explicitly opts in to difit.
+Install the `custom` branch from source instead. Node.js 21 or newer, Git, and pnpm 11.6.0 are required.
 
-After code edits or automated review, the agent can start the difit server with the appropriate skill.
-
-## 🎨 Syntax Highlighting Languages
-
-- **JavaScript/TypeScript**: `.js`, `.jsx`, `.ts`, `.tsx`, `.svelte`
-- **Web Technologies**: HTML, CSS, JSON, XML, Markdown
-- **Shell Scripts**: `.sh`, `.bash`, `.zsh`, `.fish`
-- **Backend Languages**: PHP, SQL, Ruby, Java, Groovy, Scala, Perl, Elixir, Haskell, Clojure
-- **Systems Languages**: C, C++, C#, Rust, Go
-- **Mobile Languages**: Swift, Kotlin, Dart
-- **Infrastructure as Code**: Terraform (HCL), Nix
-- **Others**: Python, Protobuf, YAML, Solidity, Vim script, GDScript
-
-## 🔍 Auto-collapsed Files
-
-difit automatically identifies and collapses certain files to keep your view clean:
-
-- **Deleted files**: Removed files are auto-collapsed since they don't require close review
-- **Generated files**: Auto-generated code is collapsed by default. This includes:
-  - Lock files (`package-lock.json`, `go.sum`, `Cargo.lock`, `Gemfile.lock`, etc.)
-  - Minified files (`*.min.js`, `*.min.css`)
-  - Source maps (`*.map`)
-  - Generated code:
-    - Orval (`*.msw.ts`, `*.zod.ts`, `*.api.ts`)
-    - Dart (`*.g.dart`, `*.freezed.dart`)
-    - C# (`*.g.cs`, `*.designer.cs`)
-    - Protobuf (`*.pb.go`, `*.pb.cc`, `*.pb.h`)
-  - Frameworks:
-    - Ruby on Rails (`db/schema.rb`)
-    - Laravel (`_ide_helper.php`)
-    - Gradle (`gradle.lockfile`)
-    - Python (`uv.lock`, `pdm.lock`)
-  - Generic generated files (`*.generated.cs`, `*.generated.ts`, `*.generated.js`)
-  - Content-based detection:
-    - Files containing `@generated` marker
-    - Files containing `DO NOT EDIT` header
-    - Language-specific generated headers (Go, Python, etc.)
-
-## 🛠️ Development
-
-```bash
-# Install dependencies
-pnpm install
-
-# Start development server (with hot reload)
-# This runs both Vite dev server and CLI with NODE_ENV=development
-pnpm run dev
-
-# Build and start production server
-pnpm run start <target>
-
-# Build for production
-pnpm run build
-
-# Run tests
-pnpm test
-
-# Run typecheck, lint, and format
-pnpm run check
-pnpm run format
+```sh
+git clone --branch custom --single-branch https://github.com/WarLikeLaux/difit.git
+cd difit
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
+pnpm add --global .
+difit --version
 ```
 
-### Development Workflow
+To update an existing installation:
 
-- **`pnpm run dev`**: Starts both Vite dev server (with hot reload) and CLI server simultaneously
-- **`pnpm run start <target>`**: Builds everything and starts production server (for testing final build)
-- **Development mode**: Uses Vite's dev server for hot reload and fast development
-- **Production mode**: Serves built static files (used by npx and production builds)
+```sh
+git switch custom
+git pull --ff-only origin custom
+pnpm install --frozen-lockfile
+pnpm build
+pnpm add --global .
+```
 
-## 🏗️ Architecture
+## Run the review hub
 
-- **CLI**: Commander.js for argument parsing with comprehensive validation
-- **Backend**: Express server with simple-git for diff processing
-- **GitHub Integration**: GitHub CLI (`gh pr diff --patch`) for PR patch retrieval
-- **Frontend**: React 18 + TypeScript + Vite
-- **Styling**: Tailwind CSS v4 with GitHub-like dark theme
-- **Syntax Highlighting**: Prism.js with dynamic language loading
-- **Testing**: Vitest for unit tests with co-located test files
-- **Quality**: oxlint, oxfmt, lefthook pre-commit hooks
+The browser dashboard is designed to sit behind a local HTTPS reverse proxy. The proxy and local hostname are environment configuration; they are not installed by difit.
 
-## 📋 Requirements
+For a proxy that maps `https://difit.local` to `127.0.0.1:4965`:
 
-- Node.js ≥ 21.0.0
-- Git repository with commits to review
-- GitHub CLI (`gh`) for `--pr` mode
+```sh
+difit hub --host 127.0.0.1 --port 4965 --public-origin https://difit.local
+```
 
-## 📄 License
+Open the configured HTTPS origin. On first use, retrieve the browser access key in a trusted terminal and enter it on the login page:
 
-MIT
+```sh
+difit auth key
+```
+
+Then start a review from the repository being reviewed:
+
+```sh
+difit . --include-untracked --background
+```
+
+The review appears in the hub. A working-tree review follows its original branch while connected. If that checkout moves to another branch, the stored review becomes read-only until a viewer reconnects with the same review identity. Comments added while it is offline remain queued.
+
+Deleting a review from the dashboard permanently removes that review’s snapshot, comments, and pending events.
+
+## Codex plugin and MCP
+
+The plugin bundle is in [`plugins/difit`](plugins/difit). Its manifest installs the maintained skill and starts the MCP server with:
+
+```sh
+difit mcp
+```
+
+The `difit` executable must therefore be available on the MCP server’s `PATH`. Other MCP clients can use the checked-in [`plugins/difit/.mcp.json`](plugins/difit/.mcp.json) configuration:
+
+```json
+{
+  "mcpServers": {
+    "difit": {
+      "command": "difit",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+MCP and CLI commands talk to the same authenticated local API. The CLI remains the fallback when the plugin is unavailable.
+
+In HAPI, start the viewer from the agent session’s shell so it inherits the current session identity. The viewer can then wake that session when feedback arrives. MCP handles later review operations; it should not start the HAPI-bound viewer from a long-lived process that lacks the current session context.
+
+## CLI additions
+
+The upstream diff targets still work. This fork adds the following entry points:
+
+```sh
+difit hub --host 127.0.0.1 --port 4965 --public-origin https://difit.local
+difit mcp
+difit review context --port <viewer-port>
+difit comment events --port <viewer-port>
+difit comment ack <through-seq> --port <viewer-port>
+difit comment watch --port <viewer-port> --cursor-file <path>
+```
+
+The MCP server exposes the same review lifecycle: start or discover a review, inspect context and threads, receive and acknowledge events, create or edit messages, and change agent-owned thread states.
+
+## Security boundary
+
+Use the HTTPS hub for browser access. Direct HTTP viewer ports bind to loopback by default but do not provide a weaker browser login. CLI and MCP calls authenticate separately without putting credentials in URLs.
+
+Diffs, filenames, comments, Markdown, SVG, and Mermaid input are treated as untrusted. The fork also disables executable Git diff converters for passive reads and checks repository-relative paths before filesystem access. See the [fork security policy](.github/SECURITY.md) for the complete trust model and limitations.
+
+## Development and upstream updates
+
+The default fork branch is `custom`. Run the standard checks before pushing changes:
+
+```sh
+pnpm check
+pnpm test
+pnpm build
+```
+
+Upstream changes are reviewed and merged into `custom`; do not reset `custom` to `upstream/main`, because that would discard the fork’s review lifecycle and security work.
+
+```sh
+git remote add upstream https://github.com/yoshiko-pg/difit.git # once
+git fetch upstream
+git switch custom
+git merge --no-ff upstream/main
+pnpm install --frozen-lockfile
+pnpm check
+pnpm test
+pnpm build
+```
+
+Resolve conflicts in favor of the fork’s documented behavior, especially authentication, content isolation, durable review identity, and the `custom`-branch CI policy. Dependency and security workflows report problems; they do not update packages automatically.
+
+See [CHANGELOG.md](CHANGELOG.md) for upstream releases and [`.github/SECURITY.md`](.github/SECURITY.md) for fork-specific security details.
+
+## License
+
+[MIT](LICENSE), matching upstream.
