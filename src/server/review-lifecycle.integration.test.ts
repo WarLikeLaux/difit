@@ -166,7 +166,8 @@ describe('branch review lifecycle', () => {
       "script-src 'self' 'unsafe-inline'",
     );
     expect(hubPage).toContain('Connected now');
-    expect(hubPage).toContain('All reviews');
+    expect(hubPage).toContain('Other reviews');
+    expect(hubPage).toContain('Grouped by repository, newest reply first');
     expect(hubPage).not.toContain('data-filter=');
     expect(hubPage).not.toContain('Technical details');
     expect(hubPage).not.toContain('data-all-reviews');
