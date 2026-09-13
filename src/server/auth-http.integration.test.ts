@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import type { Server } from 'node:http';
+import { request as createHttpRequest, type Server } from 'node:http';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -147,6 +147,41 @@ describe('browser and CLI authentication', () => {
         })
       ).status,
     ).toBe(200);
+
+    const crossSiteNavigation = await new Promise<{ status: number; contentType: string }>(
+      (resolve, reject) => {
+        const request = createHttpRequest(
+          {
+            hostname: '127.0.0.1',
+            port: hub.port,
+            path: `/reviews/${reviewId}/`,
+            headers: {
+              Host: browserHeaders.Host,
+              Cookie: cookie,
+              Accept: 'text/html',
+              Referer: 'https://hapi.local/',
+              'Sec-Fetch-Site': 'cross-site',
+              'Sec-Fetch-Mode': 'navigate',
+              'Sec-Fetch-Dest': 'document',
+              'Sec-Fetch-User': '?1',
+            },
+          },
+          (result) => {
+            result.resume();
+            result.on('end', () =>
+              resolve({
+                status: result.statusCode ?? 0,
+                contentType: String(result.headers['content-type'] ?? ''),
+              }),
+            );
+          },
+        );
+        request.on('error', reject);
+        request.end();
+      },
+    );
+    expect(crossSiteNavigation.status).toBe(200);
+    expect(crossSiteNavigation.contentType).toContain('text/html');
 
     expect(
       (
