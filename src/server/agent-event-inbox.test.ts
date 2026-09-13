@@ -74,7 +74,9 @@ describe('AgentEventInbox', () => {
     vi.useFakeTimers();
     const directory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-'));
     temporaryDirectories.push(directory);
-    const sendWake = vi.fn(async () => undefined);
+    const sendWake = vi.fn(
+      async (_sessionId: string, _message: string, _localId: string) => undefined,
+    );
     const inbox = new AgentEventInbox({
       reviewId: 'review-1',
       port: 4966,
@@ -94,6 +96,11 @@ describe('AgentEventInbox', () => {
     await vi.advanceTimersByTimeAsync(10);
     await inbox.flush();
     expect(sendWake).toHaveBeenCalledTimes(1);
+    expect(sendWake).toHaveBeenLastCalledWith(
+      'hapi-session',
+      expect.any(String),
+      'difit-wake:review-1:4966:1',
+    );
 
     await inbox.recordChanges(
       [thread([message('message-1', 'first'), message('message-2', 'second')])],
@@ -151,7 +158,43 @@ describe('AgentEventInbox', () => {
     });
     await second.initialize();
     await vi.advanceTimersByTimeAsync(10);
-    expect(secondWake).toHaveBeenCalledWith('new-session', expect.stringContaining('--port 4967'));
+    expect(secondWake).toHaveBeenCalledWith(
+      'new-session',
+      expect.stringContaining('--port 4967'),
+      'difit-wake:review-1:4967:1',
+    );
     second.dispose();
+  });
+
+  it('reuses one HAPI local ID for retries of the same outstanding wake', async () => {
+    vi.useFakeTimers();
+    const directory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-'));
+    temporaryDirectories.push(directory);
+    const sendWake = vi.fn(
+      async (_sessionId: string, _message: string, _localId: string) => undefined,
+    );
+    const inbox = new AgentEventInbox({
+      reviewId: 'review-1',
+      port: 4966,
+      hapiSessionId: 'hapi-session',
+      configDirectory: directory,
+      debounceMs: 10,
+      retryMs: 100,
+      sendWake,
+    });
+    await inbox.initialize();
+
+    await inbox.recordChanges([], [thread([message('message-1', 'first')])]);
+    await vi.advanceTimersByTimeAsync(10);
+    await inbox.flush();
+    await vi.advanceTimersByTimeAsync(100);
+    await inbox.flush();
+
+    expect(sendWake).toHaveBeenCalledTimes(2);
+    expect(sendWake.mock.calls.map((call) => call[2])).toEqual([
+      'difit-wake:review-1:4966:1',
+      'difit-wake:review-1:4966:1',
+    ]);
+    inbox.dispose();
   });
 });

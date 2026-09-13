@@ -72,7 +72,7 @@ export function createDifitMcpServer(dependencies: DifitMcpDependencies = {}): M
     {
       title: 'Start difit review',
       description:
-        'Start a detached difit viewer for a Git repository and return its actual port and URL.',
+        'Start a detached difit viewer and return its port and URL. In HAPI, launch through the current session shell instead so the viewer inherits HAPI_SESSION_ID.',
       inputSchema: z.object({
         repositoryPath: z.string().min(1).describe('Absolute path to the Git repository'),
         target: z.string().min(1).default('.').describe('Commit, branch, or live target'),

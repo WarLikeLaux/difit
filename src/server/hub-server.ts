@@ -2,7 +2,7 @@ import { request as createHttpRequest, type Server } from 'http';
 import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-import express from 'express';
+import express, { type Request, type Response } from 'express';
 
 import type { DiffCommentThread } from '../types/diff.js';
 
@@ -15,15 +15,31 @@ import {
   requireBrowserMutationOrigin,
 } from './auth.js';
 import { installBrowserLoginRoutes, logoutHandler } from './auth-http.js';
-import { readCommentSessions } from './comment-storage.js';
+import {
+  deleteCommentSession,
+  readCommentSessions,
+  writeCommentSessions,
+} from './comment-storage.js';
+import {
+  AgentEventInbox,
+  deleteAgentEventInbox,
+  getPendingAgentEventCount,
+} from './agent-event-inbox.js';
 import { getReviewBranchState, type ReviewContext } from './review-context.js';
-import { readReviewRegistrations, type ReviewRegistration } from './review-registry.js';
+import {
+  deleteReviewRegistration,
+  readReviewRegistrations,
+  type ReviewRegistration,
+} from './review-registry.js';
+import { deleteReviewSnapshot, readReviewSnapshot } from './review-snapshot.js';
 import {
   restrictCrossSiteBrowserRequests,
   restrictRequestHosts,
   restrictRequestOrigins,
   setSecurityHeaders,
 } from './request-security.js';
+import { mergeCommentThreads } from '../utils/commentImports.js';
+import { parseUserSettingsPatch, readUserConfig, updateUserClientSettings } from './user-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -43,6 +59,7 @@ export interface HubReview {
   repositoryPath: string;
   branch?: string;
   baseRef: string;
+  targetRef: string;
   reviewUrl?: string;
   port: number;
   followsBranch: boolean;
@@ -53,12 +70,30 @@ export interface HubReview {
   counts: Record<HubReviewThread['status'], number>;
   threads: HubReviewThread[];
   viewerUrl?: string;
+  available: boolean;
+  agentConnected: boolean;
+  pendingMessages: number;
+  kind: 'working-tree' | 'merge-request' | 'commit';
+  label: string;
 }
 
 export interface HubServerOptions {
   terminateProcess?: (pid: number) => void;
   publicOrigin?: string;
   authService?: AuthService;
+}
+
+function getReviewKind(registration: ReviewRegistration): Pick<HubReview, 'kind' | 'label'> {
+  if (registration.reviewUrl) {
+    return { kind: 'merge-request', label: registration.branch ?? 'Merge request' };
+  }
+  if (registration.followsBranch) {
+    return { kind: 'working-tree', label: registration.branch ?? 'Working tree' };
+  }
+  return {
+    kind: 'commit',
+    label: `Commit ${registration.targetRef.replace(/\^$/, '').slice(0, 7)}`,
+  };
 }
 
 function normalizeExternalReviewUrl(value: string | undefined): string | undefined {
@@ -149,12 +184,17 @@ export async function getHubReviews(auth = getDefaultAuthService()): Promise<Hub
   const registrations = await readReviewRegistrations();
   const reviews = await Promise.all(
     registrations.map(async (registration): Promise<HubReview> => {
-      const sessions = await readCommentSessions(registration.repositoryId);
+      const [sessions, pendingMessages, snapshot] = await Promise.all([
+        readCommentSessions(registration.repositoryId),
+        getPendingAgentEventCount(registration.id),
+        readReviewSnapshot(registration.id),
+      ]);
       const threads = (sessions[registration.sessionKey]?.threads ?? [])
         .map(summarizeThread)
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
       const branchState = await getReviewBranchState(toReviewContext(registration));
       const running = await isReviewServerRunning(registration, auth);
+      const { kind, label } = getReviewKind(registration);
       const counts: HubReview['counts'] = {
         open: 0,
         accepted: 0,
@@ -171,6 +211,7 @@ export async function getHubReviews(auth = getDefaultAuthService()): Promise<Hub
         repositoryPath: registration.repositoryPath,
         branch: registration.branch,
         baseRef: registration.baseRef,
+        targetRef: registration.targetRef,
         reviewUrl: normalizeExternalReviewUrl(registration.reviewUrl),
         port: registration.port,
         followsBranch: registration.followsBranch,
@@ -183,12 +224,76 @@ export async function getHubReviews(auth = getDefaultAuthService()): Promise<Hub
             : registration.updatedAt,
         counts,
         threads,
-        viewerUrl: running ? `/reviews/${encodeURIComponent(registration.id)}/` : undefined,
+        viewerUrl:
+          running || snapshot ? `/reviews/${encodeURIComponent(registration.id)}/` : undefined,
+        available: Boolean(running || snapshot),
+        agentConnected: Boolean(running && registration.agentAttached && !branchState.stale),
+        pendingMessages,
+        kind,
+        label,
       };
     }),
   );
 
   return reviews.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+async function readJsonBody(req: Request): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+    length += buffer.length;
+    if (length > 1_000_000) throw new Error('Request body is too large');
+    chunks.push(buffer);
+  }
+  const body = Buffer.concat(chunks).toString('utf8');
+  return body ? (JSON.parse(body) as unknown) : {};
+}
+
+function archivedSessionEpoch(reviewId: string): string {
+  return `archived:${reviewId}`;
+}
+
+async function readArchivedCommentSession(registration: ReviewRegistration) {
+  const sessions = await readCommentSessions(registration.repositoryId);
+  return {
+    sessions,
+    session: sessions[registration.sessionKey] ?? { threads: [], version: 0 },
+  };
+}
+
+async function storeArchivedComments(
+  registration: ReviewRegistration,
+  nextThreads: DiffCommentThread[],
+): Promise<{ threads: DiffCommentThread[]; version: number }> {
+  const { sessions, session } = await readArchivedCommentSession(registration);
+  const nextSession = {
+    threads: structuredClone(nextThreads),
+    version: session.version + 1,
+  };
+  sessions[registration.sessionKey] = nextSession;
+  await writeCommentSessions(registration.repositoryId, new Map(Object.entries(sessions)));
+
+  const inbox = new AgentEventInbox({
+    reviewId: registration.id,
+    port: registration.port,
+  });
+  await inbox.initialize();
+  await inbox.recordChanges(session.threads, nextSession.threads);
+  await inbox.flush();
+  inbox.dispose();
+  return nextSession;
+}
+
+function openEventStream(req: Request, res: Response, initialData: unknown): void {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  res.write(`data: ${JSON.stringify(initialData)}\n\n`);
+  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 15_000);
+  req.on('close', () => clearInterval(heartbeat));
 }
 
 const HUB_HTML = `<!doctype html>
@@ -200,20 +305,21 @@ const HUB_HTML = `<!doctype html>
   <title>DIFIT</title>
   <style>
     :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#0d1117;color:#e6edf3}
-    *{box-sizing:border-box}body{margin:0;background:#0d1117}header{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid #30363d;background:#161b22}h1{font-size:18px;margin:0}.top-actions{display:flex;align-items:center;gap:12px}.logout{border:1px solid #30363d;background:transparent;border-radius:6px;color:#c9d1d9;padding:6px 10px;cursor:pointer}.muted{color:#8b949e}.layout{max-width:1440px;margin:0 auto;padding:24px}.toolbar{display:flex;gap:8px;margin-bottom:18px}.toolbar button{border:1px solid #30363d;background:#161b22;color:#c9d1d9;border-radius:6px;padding:7px 12px;cursor:pointer}.toolbar button.active{border-color:#2f81f7;color:#fff}.review{border:1px solid #30363d;background:#161b22;border-radius:8px;margin-bottom:16px;overflow:hidden}.review-head{display:flex;gap:14px;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #30363d}.review-title{min-width:0}.review-title strong,.review-title code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.review-title code{font-size:12px;color:#8b949e;margin-top:4px}.badges{display:flex;flex-wrap:wrap;gap:6px}.badge{border:1px solid #30363d;border-radius:999px;padding:3px 8px;font-size:12px}.review-mode{color:#d2a8ff}.running{color:#3fb950}.stopped{color:#8b949e}.stale{color:#f85149}.open{color:#f2cc60}.accepted{color:#58a6ff}.to_verify{color:#bc8cff}.ready{color:#3fb950}.threads{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1px;background:#30363d}.thread{background:#0d1117;padding:12px 16px;min-width:0}.thread-top{display:flex;justify-content:space-between;gap:12px;font-size:12px}.thread-path{font-family:ui-monospace,monospace;color:#58a6ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.message{font-size:13px;line-height:1.45;margin-top:8px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.actions{display:flex;gap:8px;flex-shrink:0}.actions a,.actions button{border:1px solid #30363d;background:transparent;border-radius:6px;color:#e6edf3;text-decoration:none;padding:7px 10px;font:inherit;font-size:12px;cursor:pointer}.actions .close-viewer{border-color:#6e3035;color:#ff7b72}.actions .close-viewer:hover{background:#3d1f24;border-color:#f85149}.actions button:disabled{cursor:wait;opacity:.55}.empty{padding:36px;text-align:center;color:#8b949e}@media(max-width:700px){.layout{padding:12px}.review-head{align-items:flex-start;flex-direction:column}.threads{grid-template-columns:1fr}}
+    *{box-sizing:border-box}body{margin:0;background:#0d1117}header{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid #30363d;background:#161b22}h1{font-size:18px;margin:0}.top-actions{display:flex;align-items:center;gap:12px}.logout{border:1px solid #30363d;background:transparent;border-radius:6px;color:#c9d1d9;padding:6px 10px;cursor:pointer}.muted{color:#8b949e}.layout{max-width:1440px;margin:0 auto;padding:24px}.toolbar{display:flex;gap:8px;margin-bottom:18px}.toolbar button{border:1px solid #30363d;background:#161b22;color:#c9d1d9;border-radius:6px;padding:7px 12px;cursor:pointer}.toolbar button.active{border-color:#2f81f7;color:#fff}.review{border:1px solid #30363d;background:#161b22;border-radius:8px;margin-bottom:16px;overflow:hidden}.review-head{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:12px 24px;align-items:center;padding:14px 16px;border-bottom:1px solid #30363d}.review-title{min-width:0}.review-title strong{display:block;font-size:16px}.review-label{display:block;color:#c9d1d9;font-size:13px;margin-top:4px}.review-details{margin-top:7px;color:#8b949e;font-size:12px}.review-details summary{cursor:pointer;width:max-content}.review-details code{display:block;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.badges{display:flex;flex-wrap:wrap;gap:6px}.badge{border:1px solid #30363d;border-radius:999px;padding:3px 8px;font-size:12px}.connected{color:#3fb950}.offline{color:#8b949e}.queued{color:#f2cc60}.open{color:#f2cc60}.accepted{color:#58a6ff}.to_verify{color:#bc8cff}.ready{color:#3fb950}.threads{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1px;background:#30363d}.thread{background:#0d1117;padding:12px 16px;min-width:0}.thread-top{display:flex;justify-content:space-between;gap:12px;font-size:12px}.thread-path{font-family:ui-monospace,monospace;color:#58a6ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.message{font-size:13px;line-height:1.45;margin-top:8px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.actions{display:flex;gap:8px;flex-shrink:0;justify-self:end}.actions a,.actions button{border:1px solid #30363d;background:transparent;border-radius:6px;color:#e6edf3;text-decoration:none;padding:7px 10px;font:inherit;font-size:12px;cursor:pointer}.actions .delete-review{color:#ff7b72}.actions .delete-review:hover{border-color:#f85149;background:#3d1f24}.actions button:disabled{cursor:wait;opacity:.55}.empty{padding:36px;text-align:center;color:#8b949e}@media(max-width:700px){.layout{padding:12px}.review-head{grid-template-columns:1fr}.actions{justify-self:start}.threads{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
   <header><h1>↪ difit reviews</h1><div class="top-actions"><span id="summary" class="muted">Loading…</span><form method="post" action="/auth/logout"><button class="logout" type="submit">Log out</button></form></div></header>
-  <main class="layout"><div class="toolbar"><button data-filter="active" class="active">Active</button><button data-filter="all">All</button></div><div id="reviews"></div></main>
+  <main class="layout"><div class="toolbar"><button data-filter="current" class="active">Current</button><button data-filter="history">History</button></div><div id="reviews"></div></main>
   <script>
-    const root=document.getElementById('reviews');const summary=document.getElementById('summary');let reviews=[];let filter='active';
+    const root=document.getElementById('reviews');const summary=document.getElementById('summary');let reviews=[];let filter='current';
     const esc=(value)=>String(value??'').replace(/[&<>"']/g,(char)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-    const active=(review)=>review.running||review.threads.some((thread)=>thread.status!=='resolved');
-    function render(){const shown=reviews.filter((review)=>filter==='all'||active(review));summary.textContent=reviews.filter(active).length+' active · '+reviews.length+' total';if(!shown.length){root.innerHTML='<div class="empty">No reviews yet. Start difit in a Git checkout.</div>';return}root.innerHTML=shown.map((review)=>{const state=review.stale?'stale':review.running?'running':'stopped';const reviewMode=review.followsBranch?'Live branch':'Snapshot';const threads=review.threads.filter((thread)=>filter==='all'||thread.status!=='resolved');return '<section class="review"><div class="review-head"><div class="review-title"><strong>'+esc(review.repositoryName)+' · '+esc(review.branch||'snapshot')+'</strong><code>'+esc(review.repositoryPath)+' · base '+esc(review.baseRef)+'</code></div><div class="actions">'+(review.viewerUrl?'<a href="'+esc(review.viewerUrl)+'">Open review</a>':'')+(review.reviewUrl?'<a href="'+esc(review.reviewUrl)+'" target="_blank" rel="noreferrer">Open MR</a>':'')+(review.running?'<button type="button" class="close-viewer" data-close-review="'+esc(review.id)+'">⏻ Close viewer</button>':'')+'</div><div class="badges"><span class="badge review-mode">'+reviewMode+'</span><span class="badge '+state+'">'+state+'</span><span class="badge open">Open '+review.counts.open+'</span><span class="badge accepted">Accepted '+review.counts.accepted+'</span><span class="badge to_verify">To verify '+review.counts.to_verify+'</span><span class="badge ready">Ready '+review.counts.ready+'</span></div></div>'+(threads.length?'<div class="threads">'+threads.map((thread)=>'<article class="thread"><div class="thread-top"><span class="thread-path">'+esc(thread.filePath)+':'+thread.line+'</span><span class="'+thread.status+'">'+esc(thread.status.replace('_',' '))+'</span></div><div class="message"><span class="muted">'+esc(thread.lastAuthor||'Unknown')+':</span> '+esc(thread.lastMessage)+'</div></article>').join('')+'</div>':'<div class="empty">No active threads</div>')+'</section>'}).join('')}
+    const current=(review)=>review.agentConnected||review.pendingMessages>0||review.threads.some((thread)=>thread.status!=='resolved');
+    const kindLabel=(review)=>review.kind==='working-tree'?'Working tree on '+review.label:review.kind==='merge-request'?'Merge request '+review.label:review.label;
+    function render(){const shown=reviews.filter((review)=>filter==='history'||current(review));const waiting=reviews.reduce((count,review)=>count+review.pendingMessages,0);summary.textContent=reviews.filter((review)=>review.agentConnected).length+' agents connected'+(waiting?' / '+waiting+' waiting':'');if(!shown.length){root.innerHTML='<div class="empty">'+(filter==='current'?'Nothing needs attention. Open History to browse saved reviews.':'No reviews yet. Attach a Git checkout with difit.')+'</div>';return}root.innerHTML=shown.map((review)=>{const threads=review.threads.filter((thread)=>filter==='history'||thread.status!=='resolved');return '<section class="review"><div class="review-head"><div class="review-title"><strong>'+esc(review.repositoryName)+'</strong><span class="review-label">'+esc(kindLabel(review))+'</span><details class="review-details"><summary>Technical details</summary><code>'+esc(review.repositoryPath)+'</code><code>base '+esc(review.baseRef)+' / target '+esc(review.targetRef||'')+'</code></details></div><div class="actions">'+(review.viewerUrl?'<a href="'+esc(review.viewerUrl)+'">Open review</a>':'<span class="muted">Reattach once to save a snapshot</span>')+(review.reviewUrl?'<a href="'+esc(review.reviewUrl)+'" target="_blank" rel="noreferrer">Open MR</a>':'')+'<button type="button" class="delete-review" data-delete-review="'+esc(review.id)+'">Delete review</button></div><div class="badges"><span class="badge '+(review.agentConnected?'connected':'offline')+'">Agent '+(review.agentConnected?'connected':'offline')+'</span>'+(review.pendingMessages?'<span class="badge queued">'+review.pendingMessages+' waiting</span>':'')+'<span class="badge open">Open '+review.counts.open+'</span><span class="badge accepted">Accepted '+review.counts.accepted+'</span><span class="badge to_verify">To verify '+review.counts.to_verify+'</span><span class="badge ready">Ready '+review.counts.ready+'</span></div></div>'+(threads.length?'<div class="threads">'+threads.map((thread)=>'<article class="thread"><div class="thread-top"><span class="thread-path">'+esc(thread.filePath)+':'+thread.line+'</span><span class="'+thread.status+'">'+esc(thread.status.replace('_',' '))+'</span></div><div class="message"><span class="muted">'+esc(thread.lastAuthor||'Unknown')+':</span> '+esc(thread.lastMessage)+'</div></article>').join('')+'</div>':'<div class="empty">No unresolved threads</div>')+'</section>'}).join('')}
     async function refresh(){try{const response=await fetch('/api/reviews');reviews=await response.json();render()}catch{summary.textContent='Hub unavailable'}}
     document.querySelectorAll('[data-filter]').forEach((button)=>button.addEventListener('click',()=>{filter=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach((item)=>item.classList.toggle('active',item===button));render()}));
-    root.addEventListener('click',async(event)=>{const button=event.target.closest('[data-close-review]');if(!button||!confirm('Close this viewer? Review history and comments will remain available.'))return;button.disabled=true;button.textContent='Closing…';try{const response=await fetch('/api/reviews/'+encodeURIComponent(button.dataset.closeReview)+'/close',{method:'POST'});if(!response.ok)throw new Error();await refresh()}catch{button.disabled=false;button.textContent='⏻ Close viewer';alert('Could not close the viewer. It may already be stopped.')}});
+    root.addEventListener('click',async(event)=>{const button=event.target.closest('[data-delete-review]');if(!button||!confirm('Delete this review, its comments, and queued messages? This cannot be undone.'))return;button.disabled=true;button.textContent='Deleting…';try{const response=await fetch('/api/reviews/'+encodeURIComponent(button.dataset.deleteReview),{method:'DELETE'});if(!response.ok)throw new Error();await refresh()}catch{button.disabled=false;button.textContent='Delete review';alert('Could not delete the review.')}});
     const events=new EventSource('/api/events');events.onmessage=refresh;events.onerror=()=>{};refresh();
   </script>
 </body>
@@ -249,6 +355,34 @@ export async function startHubServer(
   app.use(requireBrowserMutationOrigin());
   app.post('/auth/logout', logoutHandler(auth));
   const clients = new Set<import('express').Response>();
+  const archivedWatchClients = new Map<string, Set<Response>>();
+  const archivedWriteQueues = new Map<string, Promise<void>>();
+  const withArchivedWriteLock = async <T>(reviewId: string, operation: () => Promise<T>) => {
+    const previous = archivedWriteQueues.get(reviewId) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queued = previous.then(() => current);
+    archivedWriteQueues.set(reviewId, queued);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (archivedWriteQueues.get(reviewId) === queued) archivedWriteQueues.delete(reviewId);
+    }
+  };
+  const broadcastArchivedComments = (reviewId: string, version: number) => {
+    const event = JSON.stringify({
+      type: 'commentsChanged',
+      version,
+      timestamp: new Date().toISOString(),
+    });
+    for (const client of archivedWatchClients.get(reviewId) ?? []) {
+      client.write(`data: ${event}\n\n`);
+    }
+  };
 
   app.get('/api/reviews', async (_req, res) => {
     res.json(await getHubReviews(auth));
@@ -274,6 +408,34 @@ export async function startHubServer(
     } catch {
       res.status(409).json({ error: 'Review viewer could not be stopped' });
     }
+  });
+  app.delete('/api/reviews/:reviewId', async (req, res) => {
+    const registration = (await readReviewRegistrations()).find(
+      (candidate) => candidate.id === req.params.reviewId,
+    );
+    if (!registration) {
+      res.status(404).json({ error: 'Review not found' });
+      return;
+    }
+
+    if (await isReviewServerRunning(registration, auth)) {
+      try {
+        (options.terminateProcess ?? ((pid: number) => process.kill(pid, 'SIGTERM')))(
+          registration.pid,
+        );
+      } catch {
+        res.status(409).json({ error: 'Review viewer could not be stopped before deletion' });
+        return;
+      }
+    }
+
+    await Promise.all([
+      deleteReviewRegistration(registration.id),
+      deleteReviewSnapshot(registration.id),
+      deleteAgentEventInbox(registration.id),
+      deleteCommentSession(registration.repositoryId, registration.sessionKey),
+    ]);
+    res.json({ success: true, reviewId: registration.id });
   });
   app.get('/api/events', (_req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -309,36 +471,164 @@ export async function startHubServer(
       return;
     }
 
-    const prefix = `/reviews/${encodeURIComponent(registration.id)}`;
-    const upstreamPath = req.originalUrl.slice(prefix.length) || '/';
-    const upstreamOrigin = `http://127.0.0.1:${registration.port}`;
-    const headers = {
-      ...req.headers,
-      host: `127.0.0.1:${registration.port}`,
-      ...(req.get('origin') ? { origin: upstreamOrigin } : {}),
-    };
-    const upstream = createHttpRequest(
-      {
-        hostname: '127.0.0.1',
-        port: registration.port,
-        method: req.method,
-        path: upstreamPath,
-        headers,
-      },
-      (upstreamResponse) => {
-        res.status(upstreamResponse.statusCode ?? 502);
-        for (const [name, value] of Object.entries(upstreamResponse.headers)) {
-          if (value !== undefined) res.setHeader(name, value);
+    if (await isReviewServerRunning(registration, auth)) {
+      const prefix = `/reviews/${encodeURIComponent(registration.id)}`;
+      const upstreamPath = req.originalUrl.slice(prefix.length) || '/';
+      const upstreamOrigin = `http://127.0.0.1:${registration.port}`;
+      const headers = {
+        ...req.headers,
+        host: `127.0.0.1:${registration.port}`,
+        ...(req.get('origin') ? { origin: upstreamOrigin } : {}),
+      };
+      const upstream = createHttpRequest(
+        {
+          hostname: '127.0.0.1',
+          port: registration.port,
+          method: req.method,
+          path: upstreamPath,
+          headers,
+        },
+        (upstreamResponse) => {
+          res.status(upstreamResponse.statusCode ?? 502);
+          for (const [name, value] of Object.entries(upstreamResponse.headers)) {
+            if (value !== undefined) res.setHeader(name, value);
+          }
+          res.setHeader('X-Difit-Review-Label', registration.branch ?? 'Snapshot');
+          upstreamResponse.pipe(res);
+        },
+      );
+      upstream.on('error', () => {
+        if (!res.headersSent) res.status(502).send('Review server unavailable');
+        else res.end();
+      });
+      req.pipe(upstream);
+      return;
+    }
+
+    const requestPath = req.url.split('?')[0] ?? '/';
+    const snapshot = await readReviewSnapshot(registration.id);
+    if (!snapshot) {
+      res.status(503).send('This review has no saved snapshot yet. Reattach an agent once.');
+      return;
+    }
+
+    if (req.method === 'GET' && requestPath === '/api/diff') {
+      res.json({ ...snapshot, openInEditorAvailable: false, reviewStale: false });
+      return;
+    }
+    if (req.method === 'GET' && requestPath === '/api/comments-json') {
+      const { session } = await readArchivedCommentSession(registration);
+      res.json({
+        sessionEpoch: archivedSessionEpoch(registration.id),
+        version: session.version,
+        threads: session.threads,
+      });
+      return;
+    }
+    if (req.method === 'POST' && requestPath === '/api/comments') {
+      try {
+        const body = (await readJsonBody(req)) as {
+          threads?: unknown;
+          baseVersion?: unknown;
+          sessionEpoch?: unknown;
+        };
+        if (!Array.isArray(body.threads)) throw new Error('Invalid comments payload');
+        const result = await withArchivedWriteLock(registration.id, async () => {
+          const { session } = await readArchivedCommentSession(registration);
+          if (body.sessionEpoch !== archivedSessionEpoch(registration.id)) {
+            return { staleClient: true as const, session };
+          }
+          const incoming = body.threads as DiffCommentThread[];
+          const threads =
+            typeof body.baseVersion === 'number' && body.baseVersion !== session.version
+              ? mergeCommentThreads(session.threads, incoming).threads
+              : incoming;
+          const stored = await storeArchivedComments(registration, threads);
+          broadcastArchivedComments(registration.id, stored.version);
+          return { staleClient: false as const, session: stored };
+        });
+        if (result.staleClient) {
+          res.status(409).json({
+            success: false,
+            staleClient: true,
+            sessionEpoch: archivedSessionEpoch(registration.id),
+            version: result.session.version,
+            threads: result.session.threads,
+          });
+          return;
         }
-        res.setHeader('X-Difit-Review-Label', registration.branch ?? 'Snapshot');
-        upstreamResponse.pipe(res);
-      },
-    );
-    upstream.on('error', () => {
-      if (!res.headersSent) res.status(502).send('Review server unavailable');
-      else res.end();
-    });
-    req.pipe(upstream);
+        res.json({
+          success: true,
+          sessionEpoch: archivedSessionEpoch(registration.id),
+          version: result.session.version,
+          threads: result.session.threads,
+        });
+      } catch (error) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : 'Invalid comments payload',
+        });
+      }
+      return;
+    }
+    if (req.method === 'GET' && requestPath === '/api/revisions') {
+      res.json({
+        specialOptions: [],
+        branches: [],
+        commits: [],
+        resolvedBase: snapshot.baseCommitish,
+        resolvedTarget: snapshot.targetCommitish,
+      });
+      return;
+    }
+    if (req.method === 'GET' && requestPath.startsWith('/api/generated-status/')) {
+      res.json({ path: requestPath.slice('/api/generated-status/'.length), isGenerated: false });
+      return;
+    }
+    if (req.method === 'GET' && requestPath === '/api/user-settings') {
+      res.json(await readUserConfig());
+      return;
+    }
+    if (req.method === 'PUT' && requestPath === '/api/user-settings') {
+      try {
+        const patch = parseUserSettingsPatch(await readJsonBody(req));
+        if (!patch) {
+          res.status(400).json({ error: 'Invalid user settings payload' });
+          return;
+        }
+        res.json(await updateUserClientSettings(patch));
+      } catch {
+        res.status(400).json({ error: 'Invalid user settings payload' });
+      }
+      return;
+    }
+    if (req.method === 'GET' && requestPath === '/api/watch') {
+      const reviewClients = archivedWatchClients.get(registration.id) ?? new Set<Response>();
+      archivedWatchClients.set(registration.id, reviewClients);
+      reviewClients.add(res);
+      openEventStream(req, res, { type: 'connected', diffMode: 'specific' });
+      req.on('close', () => reviewClients.delete(res));
+      return;
+    }
+    if (req.method === 'GET' && requestPath === '/api/heartbeat') {
+      openEventStream(req, res, { type: 'connected' });
+      return;
+    }
+    if (req.method === 'POST' && requestPath === '/api/open-in-editor') {
+      res.status(400).json({ error: 'Open in editor is unavailable for an archived snapshot' });
+      return;
+    }
+
+    if (req.method === 'GET' && requestPath === '/') {
+      res.sendFile(join(__dirname, '..', 'client', 'index.html'));
+      return;
+    }
+    if (req.method === 'GET' && !requestPath.includes('..')) {
+      res.sendFile(requestPath.replace(/^\//, ''), {
+        root: join(__dirname, '..', 'client'),
+      });
+      return;
+    }
+    res.status(404).send('Not found');
   });
   app.get('/', (_req, res) => {
     const nonce = res.locals.cspNonce as string;
@@ -348,11 +638,26 @@ export async function startHubServer(
   const refreshTimer = setInterval(() => {
     for (const client of clients) client.write(`data: ${Date.now()}\n\n`);
   }, 2_000);
+  const attachmentRefreshTimer = setInterval(() => {
+    if (archivedWatchClients.size === 0) return;
+    void (async () => {
+      const registrations = await readReviewRegistrations();
+      for (const [reviewId, reviewClients] of archivedWatchClients) {
+        const registration = registrations.find((candidate) => candidate.id === reviewId);
+        if (!registration || !(await isReviewServerRunning(registration, auth))) continue;
+        for (const client of reviewClients) client.end();
+        archivedWatchClients.delete(reviewId);
+      }
+    })();
+  }, 2_000);
 
   const server = await new Promise<Server>((resolve, reject) => {
     const instance = app.listen(preferredPort, host, () => resolve(instance));
     instance.once('error', reject);
   });
-  server.on('close', () => clearInterval(refreshTimer));
+  server.on('close', () => {
+    clearInterval(refreshTimer);
+    clearInterval(attachmentRefreshTimer);
+  });
   return { port: preferredPort, url: `http://${host}:${preferredPort}`, server };
 }

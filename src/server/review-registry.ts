@@ -23,6 +23,7 @@ export interface ReviewRegistration {
   pid: number;
   startedAt: string;
   updatedAt: string;
+  agentAttached?: boolean;
 }
 
 function getConfigDirectory(): string {
@@ -58,6 +59,7 @@ export async function registerReview(
   context: ReviewContext,
   port: number,
   pid = process.pid,
+  agentAttached = false,
 ): Promise<ReviewRegistration> {
   const now = new Date().toISOString();
   const path = getRegistrationPath(context.id);
@@ -91,6 +93,7 @@ export async function registerReview(
     pid,
     startedAt,
     updatedAt: now,
+    agentAttached,
   };
 
   if (isReviewRegistryDisabled()) return registration;
@@ -99,6 +102,11 @@ export async function registerReview(
   await ensurePrivateDirectory(dirname(path));
   await writePrivateFile(path, `${JSON.stringify(registration, null, 2)}\n`);
   return registration;
+}
+
+export async function deleteReviewRegistration(id: string): Promise<void> {
+  if (isReviewRegistryDisabled()) return;
+  await fs.rm(getRegistrationPath(id), { force: true });
 }
 
 export async function readReviewRegistrations(): Promise<ReviewRegistration[]> {
