@@ -55,7 +55,7 @@
     "format:fix": "oxfmt --write .",
     "knip": "knip --use-tsconfig-files",
     "test": "vitest run",
-    "test:security-browser": "pnpm run build:cli && node scripts/browser-security-check.mjs",
+    "test:security-browser": "pnpm run build && node scripts/browser-security-check.mjs",
     "test:watch": "vitest",
     "prepare": "lefthook install",
     "prepublishOnly": "NODE_ENV=production pnpm run build",
