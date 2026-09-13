@@ -1,0 +1,28 @@
+{
+  "name": "difit",
+  "version": "0.1.0+codex.20260913174007",
+  "description": "Interactive local code review with difit, Codex skills, and MCP tools.",
+  "author": {
+    "name": "WarLikeLaux",
+    "url": "https://github.com/WarLikeLaux"
+  },
+  "homepage": "https://github.com/WarLikeLaux/difit",
+  "repository": "https://github.com/WarLikeLaux/difit",
+  "license": "MIT",
+  "keywords": ["code-review", "diff", "git", "mcp"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Difit",
+    "shortDescription": "Review local Git changes with interactive agent feedback.",
+    "longDescription": "Open Git diffs in difit, exchange inline review comments with Codex, and reliably resume agent work when new feedback arrives.",
+    "developerName": "WarLikeLaux",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": [
+      "Open my current changes in difit for review.",
+      "Read and address the pending difit feedback.",
+      "Review this diff and add findings in difit."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

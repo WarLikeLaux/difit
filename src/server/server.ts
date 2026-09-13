@@ -27,6 +27,7 @@ import { getFileExtension } from '../utils/fileUtils.js';
 import { createId } from '../utils/createId.js';
 
 import { FileWatcherService } from './file-watcher.js';
+import { AgentEventInbox } from './agent-event-inbox.js';
 import { GitDiffParser } from './git-diff.js';
 import {
   type AuthService,
@@ -178,6 +179,7 @@ export async function startServer(options: ServerOptions): Promise<{
       ? createHash('sha256').update(serializeCommentImports(initialCommentImports)).digest('hex')
       : undefined;
   const parser = new GitDiffParser(repositoryPath);
+  let agentEventInbox: AgentEventInbox | undefined;
   const fileWatcher = new FileWatcherService();
   const generatedStatusCache = new Map<
     string,
@@ -857,8 +859,10 @@ export async function startServer(options: ServerOptions): Promise<{
   async function updateCommentSession(
     selection: DiffSelection,
     nextThreads: DiffCommentThread[],
+    wakeAgent = false,
   ): Promise<boolean> {
     const session = getOrCreateCommentSession(selection);
+    const previousThreads = session.threads;
     const previous = JSON.stringify(session.threads);
     const next = JSON.stringify(nextThreads);
     session.threads = nextThreads;
@@ -874,6 +878,9 @@ export async function startServer(options: ServerOptions): Promise<{
       version: session.version,
       timestamp: new Date().toISOString(),
     });
+    if (wakeAgent) {
+      await agentEventInbox?.recordChanges(previousThreads, nextThreads);
+    }
     return true;
   }
 
@@ -905,7 +912,8 @@ export async function startServer(options: ServerOptions): Promise<{
         ? mergeCommentThreads(session.threads, nextThreads).threads
         : nextThreads;
 
-      await updateCommentSession(selection, resolvedThreads);
+      const principal = getAuthenticatedPrincipal(res.locals as Record<string, unknown>);
+      await updateCommentSession(selection, resolvedThreads, principal.kind !== 'cli');
 
       res.json({
         success: true,
@@ -1085,8 +1093,30 @@ export async function startServer(options: ServerOptions): Promise<{
         : thread,
     );
 
-    await updateCommentSession(selection, nextThreads);
+    const principal = getAuthenticatedPrincipal(res.locals as Record<string, unknown>);
+    await updateCommentSession(selection, nextThreads, principal.kind !== 'cli');
     res.json({ success: true, threadId, status, version: session.version });
+  });
+
+  app.get('/api/agent-events', async (_req, res) => {
+    if (!agentEventInbox) {
+      res.status(404).json({ error: 'Agent event inbox is not available' });
+      return;
+    }
+    res.json(await agentEventInbox.getBatch());
+  });
+
+  app.post('/api/agent-events/ack', async (req, res) => {
+    if (!agentEventInbox) {
+      res.status(404).json({ error: 'Agent event inbox is not available' });
+      return;
+    }
+    const throughSeq = (req.body as { throughSeq?: unknown } | undefined)?.throughSeq;
+    if (typeof throughSeq !== 'number' || !Number.isInteger(throughSeq) || throughSeq < 0) {
+      res.status(400).json({ error: 'throughSeq must be a non-negative integer' });
+      return;
+    }
+    res.json(await agentEventInbox.acknowledge(throughSeq));
   });
 
   app.get('/api/comments-json', (req, res) => {
@@ -1364,6 +1394,15 @@ export async function startServer(options: ServerOptions): Promise<{
 
   if (reviewContext) {
     await registerReview(reviewContext, port);
+    if (!process.env.VITEST || process.env.DIFIT_CONFIG_DIR?.trim()) {
+      agentEventInbox = new AgentEventInbox({
+        reviewId: reviewContext.id,
+        port,
+        hapiSessionId: process.env.VITEST ? undefined : process.env.HAPI_SESSION_ID,
+      });
+      await agentEventInbox.initialize();
+      server.on('close', () => agentEventInbox?.dispose());
+    }
   }
 
   // Security warning for non-localhost binding

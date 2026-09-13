@@ -41,6 +41,22 @@ Installed skills include:
 - `difit`: ask the user for a review in the difit viewer when the user explicitly opts in to difit
 - `difit-review`: review a specific diff or PR and show the findings inside the difit viewer, when the user explicitly asks for difit
 
+### Codex plugin and MCP
+
+This repository ships a Codex plugin under `plugins/difit`. Its manifest combines the difit skill
+with a local stdio MCP server started by `difit mcp`. The MCP tools cover the complete agent
+workflow:
+
+- start and discover local reviews;
+- inspect review context and comment threads;
+- retrieve and acknowledge durable feedback events;
+- create, reply to, and edit comments;
+- move threads through the agent-owned review statuses.
+
+The CLI remains available as a standalone interface and as a fallback when the plugin is not
+installed. The MCP server delegates to the same authenticated local review API as the CLI, so both
+interfaces share one state and behavior.
+
 ## 🚀 Usage
 
 ### Basic Usage
@@ -191,6 +207,33 @@ emit each new or edited `User` message and each new `To verify` transition once 
 including events created while the watcher was stopped. Transient disconnects are retried
 automatically. After checking a `To verify` thread, an agent can mark it `Ready` with
 `difit comment ready <thread-id> --port 4966`; the reviewer can then resolve it explicitly in the UI.
+
+### HAPI wake-up delivery
+
+When a review server is started from a HAPI agent session, difit inherits `HAPI_SESSION_ID` and
+wakes that session when the browser adds or edits a `User` message, or moves a thread to
+`To verify`. Events are stored durably and coalesced behind one outstanding wake-up, so several
+comments do not interrupt the current turn or create one ping per comment.
+
+The wake-up message tells the agent to retrieve the pending batch:
+
+```sh
+difit comment events --port 4966
+```
+
+With the Codex plugin installed, the agent calls the MCP `get_events` tool instead.
+
+After handling every event in that response, the agent acknowledges its `throughSeq` value:
+
+```sh
+difit comment ack <throughSeq> --port 4966
+```
+
+The MCP equivalent is `ack_events` with the same port and exact `throughSeq`.
+
+Events arriving after the retrieved batch remain pending and cause a new wake-up after the older
+batch is acknowledged. Unacknowledged wake-ups are retried, and pending events survive difit server
+restarts. Outside HAPI, the existing `comment watch` workflow remains available.
 
 ### Comment Prompt Format
 

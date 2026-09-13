@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'child_process';
 export interface BackgroundServerInfo {
   port: number;
   url: string;
+  browserUrl?: string;
   pid: number;
 }
 
@@ -19,7 +20,12 @@ export function parseBackgroundHandshakeMessage(message: unknown): BackgroundSer
     typeof parsed.url === 'string' &&
     typeof parsed.pid === 'number'
   ) {
-    return { port: parsed.port, url: parsed.url, pid: parsed.pid };
+    return {
+      port: parsed.port,
+      url: parsed.url,
+      ...(typeof parsed.browserUrl === 'string' ? { browserUrl: parsed.browserUrl } : {}),
+      pid: parsed.pid,
+    };
   }
 
   return null;

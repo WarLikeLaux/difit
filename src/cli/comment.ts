@@ -396,6 +396,47 @@ export function createCommentCommand(): Command {
   );
 
   comment
+    .command('events')
+    .description('Retrieve pending agent events for a running difit review')
+    .requiredOption('--port <port>', 'port of the running difit server', parseInt)
+    .action(async (opts: { port: number }) => {
+      try {
+        const response = await authenticatedFetch(`http://localhost:${opts.port}/api/agent-events`);
+        const result = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) throw new Error(result.error ?? 'Failed to retrieve agent events');
+        console.log(JSON.stringify(result));
+      } catch (error) {
+        handleCommandError(error, opts.port);
+      }
+    });
+
+  comment
+    .command('ack')
+    .description('Acknowledge handled agent events')
+    .argument('<throughSeq>', 'highest handled event sequence', Number.parseInt)
+    .requiredOption('--port <port>', 'port of the running difit server', parseInt)
+    .action(async (throughSeq: number, opts: { port: number }) => {
+      try {
+        if (!Number.isInteger(throughSeq) || throughSeq < 0) {
+          throw new Error('throughSeq must be a non-negative integer');
+        }
+        const response = await authenticatedFetch(
+          `http://localhost:${opts.port}/api/agent-events/ack`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ throughSeq }),
+          },
+        );
+        const result = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) throw new Error(result.error ?? 'Failed to acknowledge agent events');
+        console.log(JSON.stringify(result));
+      } catch (error) {
+        handleCommandError(error, opts.port);
+      }
+    });
+
+  comment
     .command('add')
     .description('Add comments to a running difit server')
     .argument('[json]', 'comment import JSON (object or array)')

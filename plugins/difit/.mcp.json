@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "difit": {
+      "command": "difit",
+      "args": ["mcp"]
+    }
+  }
+}
