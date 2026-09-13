@@ -75,3 +75,13 @@ export async function writeCommentSessions(
   await ensurePrivateDirectory(dirname(path));
   await writePrivateFile(path, serialized);
 }
+
+export async function deleteCommentSession(
+  repositoryId: string,
+  sessionKey: string,
+): Promise<void> {
+  const sessions = await readCommentSessions(repositoryId);
+  if (!(sessionKey in sessions)) return;
+  delete sessions[sessionKey];
+  await writeCommentSessions(repositoryId, new Map(Object.entries(sessions)));
+}

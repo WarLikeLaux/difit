@@ -218,6 +218,105 @@ describe('branch review lifecycle', () => {
     expect(staleDiff).toMatchObject({ reviewStale: true, currentBranch: 'feature/two' });
   });
 
+  it('keeps a review interactive while its agent is offline and delivers queued feedback later', async () => {
+    const git = simpleGit(repositoryPath);
+    const base = (await git.raw(['rev-list', '--max-parents=0', 'HEAD'])).trim();
+    const first = await startServer({
+      selection: { baseCommitish: base, targetCommitish: '.', baseMode: 'merge-base' },
+      repoPath: repositoryPath,
+      preferredPort: 9340,
+      openBrowser: false,
+      keepAlive: true,
+      diffMode: DiffMode.DOT,
+    });
+    reviewServer = first.server;
+
+    const context = (await (
+      await fetch(`http://localhost:${first.port}/api/review-context`)
+    ).json()) as { id: string };
+    await closeServer(reviewServer);
+    reviewServer = undefined;
+
+    const hub = await startHubServer(9345, '127.0.0.1');
+    hubServer = hub.server;
+    const reviewPath = `/reviews/${context.id}`;
+    const archivedDiff = await fetch(`http://localhost:${hub.port}${reviewPath}/api/diff`);
+    expect(archivedDiff.status).toBe(200);
+    await expect(archivedDiff.json()).resolves.toMatchObject({
+      reviewId: context.id,
+      reviewBranch: 'feature/one',
+      openInEditorAvailable: false,
+    });
+
+    const comments = (await (
+      await fetch(`http://localhost:${hub.port}${reviewPath}/api/comments-json`)
+    ).json()) as { sessionEpoch: string; version: number };
+    const createdAt = new Date().toISOString();
+    const queuedResponse = await fetch(`http://localhost:${hub.port}${reviewPath}/api/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionEpoch: comments.sessionEpoch,
+        baseVersion: comments.version,
+        threads: [
+          {
+            id: 'offline-thread',
+            filePath: 'example.txt',
+            position: { side: 'new', line: 2 },
+            createdAt,
+            updatedAt: createdAt,
+            messages: [
+              {
+                id: 'offline-message',
+                author: 'User',
+                body: 'Wait for the matching branch agent',
+                createdAt,
+                updatedAt: createdAt,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(queuedResponse.status).toBe(200);
+    await expect(getHubReviews()).resolves.toEqual([
+      expect.objectContaining({
+        id: context.id,
+        agentConnected: false,
+        pendingMessages: 1,
+        viewerUrl: `${reviewPath}/`,
+      }),
+    ]);
+
+    const second = await startServer({
+      selection: { baseCommitish: base, targetCommitish: '.', baseMode: 'merge-base' },
+      repoPath: repositoryPath,
+      preferredPort: 9340,
+      openBrowser: false,
+      keepAlive: true,
+      diffMode: DiffMode.DOT,
+    });
+    reviewServer = second.server;
+    const events = (await (
+      await fetch(`http://localhost:${second.port}/api/agent-events`)
+    ).json()) as { reviewId: string; events: Array<{ threadId: string }> };
+    expect(events.reviewId).toBe(context.id);
+    expect(events.events).toEqual([
+      expect.objectContaining({ type: 'userMessage', threadId: 'offline-thread' }),
+    ]);
+
+    await closeServer(reviewServer);
+    reviewServer = undefined;
+    const deleteResponse = await fetch(`http://localhost:${hub.port}/api/reviews/${context.id}`, {
+      method: 'DELETE',
+    });
+    expect(deleteResponse.status).toBe(200);
+    await expect(getHubReviews()).resolves.toEqual([]);
+    expect(await fetch(`http://localhost:${hub.port}${reviewPath}/api/diff`)).toMatchObject({
+      status: 404,
+    });
+  });
+
   it('migrates comments from the previous commit-based MR session', async () => {
     const git = simpleGit(repositoryPath);
     const base = (await git.raw(['rev-list', '--max-parents=0', 'HEAD'])).trim();

@@ -208,10 +208,14 @@ automatically. After checking a `To verify` thread, an agent can mark it `Ready`
 
 ### HAPI wake-up delivery
 
-When a review server is started from a HAPI agent session, difit inherits `HAPI_SESSION_ID` and
-wakes that session when the browser adds or edits a `User` message, or moves a thread to
-`To verify`. Events are stored durably and coalesced behind one outstanding wake-up, so several
-comments do not interrupt the current turn or create one ping per comment.
+When a review server is started through the shell of a HAPI agent session, difit inherits
+`HAPI_SESSION_ID` and wakes that session when the browser adds or edits a `User` message, or moves a
+thread to `To verify`. A persistent MCP server may not have the current HAPI session environment,
+so HAPI-bound viewers must be launched through that session's shell; MCP remains available for all
+subsequent review operations. Events are stored durably and coalesced behind one outstanding
+wake-up, so several comments do not interrupt the current turn or create one ping per comment.
+Retries reuse a stable HAPI `localId`, so the hub deduplicates an uncertain or repeated delivery
+instead of showing the same wake-up message twice.
 
 The wake-up message tells the agent to retrieve the pending batch:
 
@@ -260,10 +264,17 @@ Run the local dashboard to see registered reviews and their active threads:
 difit hub --host 127.0.0.1 --port 4965
 ```
 
-The dashboard keeps stopped reviews visible from their persisted metadata. Running viewers open
-under the same origin at `/reviews/<review-id>/`, with a back button to the review list; their
-internal localhost ports are not exposed in the UI. Checkout-specific metadata stays in the local
-Difit config directory.
+Every review keeps its last successfully rendered diff as a private snapshot. Reviews therefore
+remain readable and accept comments at `/reviews/<review-id>/` even when their agent process is
+offline or the checkout has moved to another branch. Offline comments stay in the review's durable
+event queue; the next agent attached to that exact review receives them in order. A checkout path
+alone never selects an agent, so feedback from an old branch cannot leak into the current branch.
+
+The dashboard exposes review state rather than worker state: `Agent connected`, `Agent offline`,
+and the number of waiting messages. Commit expressions and repository paths live under
+**Technical details** instead of being used as review titles. **Delete review** permanently removes
+only that review's snapshot, comments, and pending events; internal localhost ports and viewer
+process controls are not part of the browser workflow.
 
 ### Local access security
 
@@ -276,7 +287,7 @@ difit auth key
 difit hub --host 127.0.0.1 --port 4965 --public-origin https://difit.local
 ```
 
-The browser then receives a host-only, `HttpOnly`, `Secure`, `SameSite=Strict` session for up to 30
+The browser then receives a host-only, `HttpOnly`, `Secure`, `SameSite=Lax` session for up to 30
 days. The session survives ordinary restarts. Use the UI's **Log out** action to revoke only the
 current browser session, `difit auth revoke` to revoke all browser sessions, or `difit auth rotate`
 to replace the browser key and revoke all existing sessions. CLI commands use a separate private

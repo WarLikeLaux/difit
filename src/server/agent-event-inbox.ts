@@ -52,7 +52,7 @@ interface AgentEventInboxOptions {
   configDirectory?: string;
   debounceMs?: number;
   retryMs?: number;
-  sendWake?: (sessionId: string, message: string) => Promise<void>;
+  sendWake?: (sessionId: string, message: string, localId: string) => Promise<void>;
 }
 
 const DEFAULT_DEBOUNCE_MS = 500;
@@ -125,12 +125,12 @@ export function findAgentReviewEvents(
   return events;
 }
 
-function runHapiPing(sessionId: string, message: string): Promise<void> {
+function runHapiPing(sessionId: string, message: string, localId: string): Promise<void> {
   const executable = process.env.HAPI_CLI_EXECUTABLE?.trim() || 'hapi';
   return new Promise((resolve, reject) => {
     execFile(
       executable,
-      ['ping-peer', sessionId, message],
+      ['ping-peer', sessionId, message, '--local-id', localId],
       { timeout: 70_000, windowsHide: true },
       (error) => (error ? reject(error) : resolve()),
     );
@@ -147,6 +147,26 @@ function emptyInbox(): StoredAgentEventInbox {
   };
 }
 
+export async function getPendingAgentEventCount(
+  reviewId: string,
+  configDirectory = defaultConfigDirectory(),
+): Promise<number> {
+  try {
+    const path = join(configDirectory, 'agent-events', `${reviewId}.json`);
+    const parsed: unknown = JSON.parse(await fs.readFile(path, 'utf8'));
+    return isStoredAgentEventInbox(parsed) ? parsed.events.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function deleteAgentEventInbox(
+  reviewId: string,
+  configDirectory = defaultConfigDirectory(),
+): Promise<void> {
+  await fs.rm(join(configDirectory, 'agent-events', `${reviewId}.json`), { force: true });
+}
+
 export class AgentEventInbox {
   readonly #reviewId: string;
   readonly #port: number;
@@ -154,7 +174,7 @@ export class AgentEventInbox {
   readonly #path: string;
   readonly #debounceMs: number;
   readonly #retryMs: number;
-  readonly #sendWake: (sessionId: string, message: string) => Promise<void>;
+  readonly #sendWake: (sessionId: string, message: string, localId: string) => Promise<void>;
   #state = emptyInbox();
   #operations: Promise<void> = Promise.resolve();
   #wakeTimer?: NodeJS.Timeout;
@@ -291,9 +311,12 @@ export class AgentEventInbox {
       `Use the difit MCP get_events tool with port ${this.#port}; CLI fallback: difit comment events --port ${this.#port}`,
       `After handling every returned event, acknowledge the exact throughSeq with the MCP ack_events tool; CLI fallback: difit comment ack <throughSeq> --port ${this.#port}`,
     ].join('\n');
+    const firstPendingSeq = this.#state.events[0]?.seq;
+    if (firstPendingSeq === undefined) return;
+    const localId = `difit-wake:${this.#reviewId}:${this.#port}:${firstPendingSeq}`;
 
     try {
-      await this.#sendWake(this.#hapiSessionId, message);
+      await this.#sendWake(this.#hapiSessionId, message, localId);
       this.#state.wakeOutstanding = true;
       this.#state.wakeSentAt = new Date().toISOString();
       await this.#persist();

@@ -45,6 +45,7 @@ import {
   type ReviewBranchState,
 } from './review-context.js';
 import { registerReview } from './review-registry.js';
+import { writeReviewSnapshot } from './review-snapshot.js';
 import {
   restrictCrossSiteBrowserRequests,
   restrictRequestHosts,
@@ -481,7 +482,7 @@ export async function startServer(options: ServerOptions): Promise<{
       (requestedSelection.targetCommitish || (options.stdinDiff ? 'stdin' : undefined));
     const requestedBaseMode = responseDiffData.requestedBaseMode ?? requestedSelection.baseMode;
 
-    res.json({
+    const responsePayload: DiffResponse = {
       ...responseDiffData,
       ignoreWhitespace,
       openInEditorAvailable: !options.stdinDiff,
@@ -499,7 +500,19 @@ export async function startServer(options: ServerOptions): Promise<{
       reviewBranch: reviewContext?.branch,
       reviewStale: branchState.stale,
       currentBranch: branchState.currentBranch,
-    });
+    };
+
+    if (reviewContext && !branchState.stale && !hasBase && !hasTarget && !hasBaseMode) {
+      await writeReviewSnapshot(reviewContext.id, {
+        ...responsePayload,
+        openInEditorAvailable: false,
+        clearComments: false,
+        commentImports: undefined,
+        commentImportId: undefined,
+      });
+    }
+
+    res.json(responsePayload);
   });
 
   app.get(/^\/api\/generated-status\/(.*)$/, async (req, res) => {
@@ -1393,7 +1406,36 @@ export async function startServer(options: ServerOptions): Promise<{
   );
 
   if (reviewContext) {
-    await registerReview(reviewContext, port);
+    await registerReview(
+      reviewContext,
+      port,
+      process.pid,
+      Boolean(!process.env.VITEST && process.env.HAPI_SESSION_ID?.trim()),
+    );
+    const baseCommitish =
+      initialDiffData.baseCommitish ?? (options.stdinDiff ? 'stdin' : undefined);
+    const targetCommitish =
+      initialDiffData.targetCommitish ?? (options.stdinDiff ? 'stdin' : undefined);
+    await writeReviewSnapshot(reviewContext.id, {
+      ...initialDiffData,
+      ignoreWhitespace: initialIgnoreWhitespace,
+      openInEditorAvailable: false,
+      baseCommitish,
+      targetCommitish,
+      requestedBaseCommitish:
+        initialDiffData.requestedBaseCommitish ?? initialSelection.baseCommitish,
+      requestedTargetCommitish:
+        initialDiffData.requestedTargetCommitish ?? initialSelection.targetCommitish,
+      requestedBaseMode: initialDiffData.requestedBaseMode ?? initialSelection.baseMode,
+      clearComments: false,
+      repositoryId,
+      reviewUrl: options.reviewUrl,
+      reviewId: reviewContext.id,
+      reviewBranch: reviewContext.branch,
+      reviewStale: false,
+      commentImports: undefined,
+      commentImportId: undefined,
+    });
     if (!process.env.VITEST || process.env.DIFIT_CONFIG_DIR?.trim()) {
       agentEventInbox = new AgentEventInbox({
         reviewId: reviewContext.id,
