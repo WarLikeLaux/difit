@@ -219,7 +219,7 @@ export class AuthService {
       httpOnly: true,
       maxAge: Math.floor(this.#sessionTtlMs / 1_000),
       path: '/',
-      sameSite: 'strict',
+      sameSite: 'lax',
       secure: true,
     });
   }
@@ -230,7 +230,7 @@ export class AuthService {
       httpOnly: true,
       maxAge: 0,
       path: '/',
-      sameSite: 'strict',
+      sameSite: 'lax',
       secure: true,
     });
   }

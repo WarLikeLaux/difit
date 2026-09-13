@@ -66,7 +66,7 @@ describe('AuthService', () => {
     ).toMatchObject({ kind: 'browser' });
   });
 
-  it('issues a host-only secure strict cookie with a 30-day production lifetime', () => {
+  it('issues a host-only secure lax cookie with a 30-day production lifetime', () => {
     const productionAuth = new AuthService({ configDirectory: root });
     const cookie = productionAuth.createSessionCookie('opaque-session');
     expect(cookie).toContain(`${AUTH_COOKIE_NAME}=opaque-session`);
@@ -74,7 +74,7 @@ describe('AuthService', () => {
     expect(cookie).toContain('Path=/');
     expect(cookie).toContain('HttpOnly');
     expect(cookie).toContain('Secure');
-    expect(cookie).toContain('SameSite=Strict');
+    expect(cookie).toContain('SameSite=Lax');
     expect(cookie).not.toContain('Domain=');
   });
 
