@@ -36,10 +36,8 @@ Enable use from AI agents
 npx skills add yoshiko-pg/difit # Add the Skills to your agent
 ```
 
-Installed skills include:
-
-- `difit`: ask the user for a review in the difit viewer when the user explicitly opts in to difit
-- `difit-review`: review a specific diff or PR and show the findings inside the difit viewer, when the user explicitly asks for difit
+The installed `difit` skill opens requested changes, reviews a specific diff or PR with inline
+findings, and handles follow-up comments when the user explicitly opts in to difit.
 
 ### Codex plugin and MCP
 
@@ -299,10 +297,8 @@ You can install the following Skills to work with difit from AI agents.
 npx skills add yoshiko-pg/difit
 ```
 
-Installed skills include:
-
-- `difit`: ask the user for a review in the difit viewer when the user explicitly opts in to difit
-- `difit-review`: review a specific diff or PR and show the findings inside the difit viewer, when the user explicitly asks for difit
+The installed `difit` skill opens requested changes, reviews a specific diff or PR with inline
+findings, and handles follow-up comments when the user explicitly opts in to difit.
 
 After code edits or automated review, the agent can start the difit server with the appropriate skill.
 

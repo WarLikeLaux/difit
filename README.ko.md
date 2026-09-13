@@ -31,10 +31,7 @@ AI 에이전트에서 사용할 수 있도록 설정
 npx skills add yoshiko-pg/difit # 에이전트에 Skill들 추가
 ```
 
-설치되는 주요 Skill:
-
-- `difit`: 코드 변경 후 difit을 통해 사용자에게 리뷰를 요청
-- `difit-review`: 특정 diff 또는 PR을 검토하고, 지적사항이나 설명을 코멘트로 미리 넣은 difit을 실행
+설치되는 `difit` Skill은 변경 내용 표시, 특정 diff 또는 PR에 대한 인라인 리뷰 코멘트 추가, 사용자의 후속 코멘트 처리를 하나의 워크플로로 제공합니다.
 
 ## 🚀 사용법
 
@@ -184,10 +181,7 @@ AI 에이전트에서 difit을 사용하기 위한 Skill들은 아래 명령으�
 npx skills add yoshiko-pg/difit
 ```
 
-설치되는 주요 Skill:
-
-- `difit`: 코드 변경 후 difit을 통해 사용자에게 리뷰를 요청
-- `difit-review`: 특정 diff 또는 PR을 검토하고, 지적사항이나 설명을 코멘트로 미리 넣은 difit을 실행
+설치되는 `difit` Skill은 변경 내용 표시, 특정 diff 또는 PR에 대한 인라인 리뷰 코멘트 추가, 사용자의 후속 코멘트 처리를 하나의 워크플로로 제공합니다.
 
 코드 수정 후나 자동 리뷰 시, 목적에 맞는 Skill로 difit 서버를 실행할 수 있습니다.
 

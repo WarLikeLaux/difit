@@ -31,10 +31,7 @@ difit  # 在 WebUI 中查看最新提交的差异
 npx skills add yoshiko-pg/difit # 为代理添加 Skills
 ```
 
-安装后包含的主要 Skill：
-
-- `difit`：在代码修改后通过 difit 向用户请求审查
-- `difit-review`：审查特定 diff 或 PR，并启动一个已预载评论或说明的 difit
+安装后的 `difit` Skill 将展示变更、为特定 diff 或 PR 添加行内审查意见，以及处理用户的后续评论整合到一个工作流中。
 
 ## 🚀 使用方法
 
@@ -184,10 +181,7 @@ src/components/Button.tsx:L42-L48   # 此行自动添加
 npx skills add yoshiko-pg/difit
 ```
 
-安装后包含的主要 Skill：
-
-- `difit`：在代码修改后通过 difit 向用户请求审查
-- `difit-review`：审查特定 diff 或 PR，并启动一个已预载评论或说明的 difit
+安装后的 `difit` Skill 将展示变更、为特定 diff 或 PR 添加行内审查意见，以及处理用户的后续评论整合到一个工作流中。
 
 在代码修改后或自动审查时，代理可以根据目的使用对应的 Skill 来启动 difit 服务器。
 
