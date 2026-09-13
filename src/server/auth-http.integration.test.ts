@@ -128,7 +128,7 @@ describe('browser and CLI authentication', () => {
     expect(setCookie).toContain('__Host-difit_session=');
     expect(setCookie).toContain('HttpOnly');
     expect(setCookie).toContain('Secure');
-    expect(setCookie).toContain('SameSite=Strict');
+    expect(setCookie).toContain('SameSite=Lax');
     expect(setCookie).not.toContain('Domain=');
     const cookie = setCookie.split(';', 1)[0];
 
