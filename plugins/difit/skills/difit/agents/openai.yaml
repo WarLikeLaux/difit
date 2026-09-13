@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Difit'
+  short_description: 'Открыть diff и обработать комментарии пользователя.'
+  default_prompt: 'Используй $difit для review изменений и обработай обратную связь через HAPI inbox или watcher fallback.'

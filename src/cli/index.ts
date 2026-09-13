@@ -24,6 +24,7 @@ import { createAuthCommand } from './auth-command.js';
 import { authenticatedFetch } from './auth-client.js';
 import { createHubCommand } from './hub.js';
 import { createReviewCommand } from './review-command.js';
+import { createMcpCommand } from './mcp-command.js';
 import { getPrPatch, getPrCommentImports } from './github.js';
 import { detectGitLabMergeRequestUrl, normalizeGitLabMergeRequestUrl } from './gitlab.js';
 import {
@@ -109,6 +110,7 @@ program
   .addCommand(createCommentCommand())
   .addCommand(createHubCommand())
   .addCommand(createReviewCommand())
+  .addCommand(createMcpCommand())
   .argument(
     '[commit-ish]',
     'Git commit, tag, branch, HEAD~n reference, or "working"/"staged"/"."',
@@ -248,7 +250,7 @@ program
         });
 
         if (backgroundMode) {
-          emitBackgroundHandshake({ port, url, pid: process.pid });
+          emitBackgroundHandshake({ port, url, browserUrl, pid: process.pid });
           if (isBackgroundChild) {
             ignoreStdioErrorsForBackgroundDaemon();
           }
@@ -324,7 +326,7 @@ program
       });
 
       if (backgroundMode) {
-        emitBackgroundHandshake({ port, url, pid: process.pid });
+        emitBackgroundHandshake({ port, url, browserUrl, pid: process.pid });
         if (isBackgroundChild) {
           ignoreStdioErrorsForBackgroundDaemon();
         }

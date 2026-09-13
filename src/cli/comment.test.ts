@@ -23,6 +23,8 @@ describe('createCommentCommand', () => {
     expect(subcommandNames).toContain('reply');
     expect(subcommandNames).toContain('edit');
     expect(subcommandNames).toContain('get');
+    expect(subcommandNames).toContain('events');
+    expect(subcommandNames).toContain('ack');
     expect(subcommandNames).toContain('watch');
     expect(subcommandNames).toContain('resolve');
     expect(subcommandNames).toContain('verify');
@@ -252,6 +254,40 @@ describe('comment subcommand integration', () => {
       await command.parseAsync(['node', 'difit', 'get', '--port', '4966']);
 
       expect(consoleOutput).toHaveLength(0);
+    });
+  });
+
+  describe('agent events', () => {
+    it('retrieves pending events', async () => {
+      mockFetch.mockResolvedValue(
+        jsonResponse({ reviewId: 'review-1', ackedThrough: 0, throughSeq: 2, events: [] }),
+      );
+
+      await createCommentCommand().parseAsync(['node', 'difit', 'events', '--port', '4966']);
+
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4966/api/agent-events');
+      expect(JSON.parse(consoleOutput[0] ?? '{}')).toMatchObject({
+        reviewId: 'review-1',
+        throughSeq: 2,
+      });
+    });
+
+    it('acknowledges a handled event sequence', async () => {
+      mockFetch.mockResolvedValue(
+        jsonResponse({ success: true, ackedThrough: 2, pendingCount: 0 }),
+      );
+
+      await createCommentCommand().parseAsync(['node', 'difit', 'ack', '2', '--port', '4966']);
+
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4966/api/agent-events/ack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ throughSeq: 2 }),
+      });
+      expect(JSON.parse(consoleOutput[0] ?? '{}')).toMatchObject({
+        success: true,
+        ackedThrough: 2,
+      });
     });
   });
 

@@ -54,11 +54,13 @@ describe('background process lifecycle', () => {
       parseBackgroundHandshakeMessage({
         port: 4966,
         url: 'http://localhost:4966',
+        browserUrl: 'https://difit.example/reviews/review-1/',
         pid: 12345,
       }),
     ).toEqual({
       port: 4966,
       url: 'http://localhost:4966',
+      browserUrl: 'https://difit.example/reviews/review-1/',
       pid: 12345,
     });
     expect(parseBackgroundHandshakeMessage({ port: 4966 })).toBeNull();

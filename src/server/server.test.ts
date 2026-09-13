@@ -120,6 +120,69 @@ vi.mock('./git-diff.js', () => {
 
 describe('Server Integration Tests', () => {
   describe('Comments API', () => {
+    it('queues browser feedback for an agent until acknowledged', async () => {
+      const configDirectory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-server-'));
+      const previousConfigDirectory = process.env.DIFIT_CONFIG_DIR;
+      process.env.DIFIT_CONFIG_DIR = configDirectory;
+      const port = await getAvailablePort(4966);
+      const result = await startServer({
+        preferredPort: port,
+        openBrowser: false,
+        selection: { baseCommitish: 'HEAD^', targetCommitish: 'HEAD' },
+      });
+
+      try {
+        const now = '2026-09-13T10:00:00.000Z';
+        const response = await postComments(result.port, {
+          threads: [
+            {
+              id: 'thread-1',
+              filePath: 'src/App.tsx',
+              position: { side: 'new', line: 10 },
+              createdAt: now,
+              updatedAt: now,
+              messages: [
+                {
+                  id: 'message-1',
+                  body: 'Please revisit this',
+                  author: 'User',
+                  createdAt: now,
+                  updatedAt: now,
+                },
+              ],
+            },
+          ],
+        });
+        expect(response.status).toBe(200);
+
+        const eventsResponse = await fetch(`http://localhost:${result.port}/api/agent-events`);
+        const batch = (await eventsResponse.json()) as {
+          throughSeq: number;
+          events: Array<{ type: string; seq: number }>;
+        };
+        expect(batch.events).toEqual([expect.objectContaining({ type: 'userMessage', seq: 1 })]);
+        expect(batch.throughSeq).toBe(1);
+
+        const ackResponse = await fetch(`http://localhost:${result.port}/api/agent-events/ack`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ throughSeq: batch.throughSeq }),
+        });
+        expect(await ackResponse.json()).toMatchObject({
+          success: true,
+          ackedThrough: 1,
+          pendingCount: 0,
+        });
+      } finally {
+        if (result.server) {
+          await new Promise<void>((resolve) => result.server!.close(() => resolve()));
+        }
+        if (previousConfigDirectory === undefined) delete process.env.DIFIT_CONFIG_DIR;
+        else process.env.DIFIT_CONFIG_DIR = previousConfigDirectory;
+        await fs.rm(configDirectory, { recursive: true, force: true });
+      }
+    });
+
     it('should accept properly formatted comments', async () => {
       const port = await getAvailablePort(4966);
       const result = await startServer({
