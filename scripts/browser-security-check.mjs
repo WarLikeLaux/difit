@@ -252,7 +252,13 @@ try {
   await secondTab.bringToFront();
   await Promise.all([
     secondTab.waitForURL(`${origin}/auth/login`),
-    secondTab.getByRole('button', { name: 'Log out' }).click(),
+    secondTab.evaluate(() => {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/auth/logout';
+      document.body.append(form);
+      form.submit();
+    }),
   ]);
 
   const replayContext = await browser.newContext();
