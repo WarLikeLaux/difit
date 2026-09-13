@@ -165,6 +165,9 @@ describe('branch review lifecycle', () => {
     expect(hubPageResponse.headers.get('Content-Security-Policy')).not.toContain(
       "script-src 'self' 'unsafe-inline'",
     );
+    expect(hubPage).toContain('Connected now');
+    expect(hubPage).toContain('All reviews');
+    expect(hubPage).not.toContain('data-filter=');
     const wrongPublicOrigin = await fetch(`http://localhost:${hub.port}/api/reviews`, {
       headers: {
         Host: 'difit.example.test',
