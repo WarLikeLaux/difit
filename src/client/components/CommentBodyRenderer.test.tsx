@@ -44,13 +44,27 @@ describe('CommentBodyRenderer', () => {
     expect(container).toHaveTextContent('line two');
   });
 
-  it('keeps consecutive spaces inside paragraphs', () => {
-    const { container } = render(<CommentBodyRenderer body={'aligned:    value'} />);
+  it('does not preserve the formatting newline emitted after a markdown break', () => {
+    const { container } = render(<CommentBodyRenderer body={'**Question**\nAnswer'} />);
 
     const paragraph = container.querySelector('p');
     expect(paragraph).not.toBeNull();
-    expect(paragraph?.textContent).toBe('aligned:    value');
-    expect(paragraph?.className).toContain('whitespace-pre-wrap');
+    expect(paragraph).not.toHaveClass('whitespace-pre-wrap');
+    expect(paragraph?.querySelectorAll('br')).toHaveLength(1);
+  });
+
+  it('does not preserve markdown formatting whitespace around list items', () => {
+    const { container } = render(
+      <CommentBodyRenderer
+        body={'1. **Question**\n\n   Answer\n\n2. **Another question**\n\n   Another answer'}
+      />,
+    );
+
+    const listItems = container.querySelectorAll('li');
+    expect(listItems).toHaveLength(2);
+    expect(listItems[0]).not.toHaveClass('whitespace-pre-wrap');
+    expect(listItems[0]).toHaveClass('[&>p]:my-1');
+    expect(listItems[0]?.querySelector('p:first-child')).toHaveTextContent('Question');
   });
 
   it('treats 4-space indented lines as code blocks (markdown semantics)', () => {

@@ -110,10 +110,8 @@ const getCommentMarkdownComponents = (syntaxTheme?: AppearanceSettings['syntaxTh
   h6: ({ children }: { children?: React.ReactNode }) => (
     <h6 className="text-sm font-semibold mt-3 mb-1 first:mt-0">{children}</h6>
   ),
-  // whitespace-pre-wrap keeps consecutive spaces/tabs inside a paragraph, which the
-  // pre-markdown plain-text rendering preserved (e.g. agent comments aligned with spaces).
   p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="my-2 first:mt-0 last:mb-0 whitespace-pre-wrap">{children}</p>
+    <p className="my-2 first:mt-0 last:mb-0">{children}</p>
   ),
   ul: ({ children }: { children?: React.ReactNode }) => (
     <ul className="list-disc pl-5 my-2 first:mt-0 last:mb-0 space-y-0.5">{children}</ul>
@@ -122,7 +120,7 @@ const getCommentMarkdownComponents = (syntaxTheme?: AppearanceSettings['syntaxTh
     <ol className="list-decimal pl-5 my-2 first:mt-0 last:mb-0 space-y-0.5">{children}</ol>
   ),
   li: ({ children }: { children?: React.ReactNode }) => (
-    <li className="whitespace-pre-wrap">{children}</li>
+    <li className="[&>p]:my-1 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0">{children}</li>
   ),
   blockquote: ({ children }: { children?: React.ReactNode }) => (
     <blockquote className="border-l-4 border-github-border pl-3 my-2 text-github-text-muted">
