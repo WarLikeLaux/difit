@@ -1100,14 +1100,7 @@ function App() {
     }
 
     hasSelectedInitialMainViewRef.current = true;
-    setMainView(
-      threads.some(
-        (thread) =>
-          !thread.acceptedAt && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt,
-      )
-        ? 'comments'
-        : 'diff',
-    );
+    setMainView(threads.some((thread) => !thread.resolvedAt) ? 'comments' : 'diff');
   }, [hasBootstrappedComments, threads]);
 
   // Trigger sparkle animation when all files are viewed

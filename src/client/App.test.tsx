@@ -624,6 +624,29 @@ describe('App Component - Comment sync', () => {
     );
   });
 
+  it('opens the comments view by default when a non-open unresolved thread exists', async () => {
+    mockComments = [
+      {
+        ...createMockThread({
+          id: 'test-1',
+          filePath: 'test.ts',
+          line: 10,
+          body: 'Accepted comment',
+        }),
+        acceptedAt: '2026-09-11T00:00:00.000Z',
+      },
+    ];
+    mockFetch(mockDiffResponse);
+
+    renderApp();
+
+    expect(await screen.findByRole('heading', { name: 'Comments' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accepted (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
   it('scrolls to the exact thread selected from the comments view', async () => {
     mockComments = [
       createMockThread({ id: 'test-1', filePath: 'test.ts', line: 10, body: 'First comment' }),

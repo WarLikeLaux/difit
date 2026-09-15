@@ -18,18 +18,16 @@ const THREAD_FILTER_ORDER: CommentThreadStatus[] = [
   'resolved',
 ];
 
+function getThreadStatusFilter(thread: CommentThread): CommentThreadStatus {
+  if (thread.resolvedAt) return 'resolved';
+  if (thread.readyAt) return 'ready';
+  if (thread.toVerifyAt) return 'to_verify';
+  if (thread.acceptedAt) return 'accepted';
+  return 'open';
+}
+
 function threadMatchesFilter(thread: CommentThread, filter: ThreadFilter): boolean {
-  if (filter === 'open')
-    return !thread.acceptedAt && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt;
-  if (filter === 'accepted')
-    return (
-      Boolean(thread.acceptedAt) && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt
-    );
-  if (filter === 'to_verify')
-    return Boolean(thread.toVerifyAt) && !thread.readyAt && !thread.resolvedAt;
-  if (filter === 'ready') return Boolean(thread.readyAt) && !thread.resolvedAt;
-  if (filter === 'resolved') return Boolean(thread.resolvedAt);
-  return true;
+  return filter === 'all' || getThreadStatusFilter(thread) === filter;
 }
 
 function getInitialThreadFilter(comments: CommentThread[]): ThreadFilter {
@@ -38,6 +36,34 @@ function getInitialThreadFilter(comments: CommentThread[]): ThreadFilter {
       comments.some((thread) => threadMatchesFilter(thread, filter)),
     ) ?? 'open'
   );
+}
+
+function getNextAvailableThreadFilter(
+  comments: CommentThread[],
+  currentFilter: CommentThreadStatus,
+): CommentThreadStatus | undefined {
+  const currentIndex = THREAD_FILTER_ORDER.indexOf(currentFilter);
+  const filtersAfterCurrent = THREAD_FILTER_ORDER.slice(currentIndex + 1);
+  const filtersBeforeCurrent = THREAD_FILTER_ORDER.slice(0, currentIndex);
+  return [...filtersAfterCurrent, ...filtersBeforeCurrent].find((filter) =>
+    comments.some((thread) => threadMatchesFilter(thread, filter)),
+  );
+}
+
+function getMovedThreadFilter(
+  previousComments: CommentThread[],
+  comments: CommentThread[],
+  currentFilter: CommentThreadStatus,
+): CommentThreadStatus | undefined {
+  const commentsById = new Map(comments.map((thread) => [thread.id, thread]));
+  for (const previousThread of previousComments) {
+    if (!threadMatchesFilter(previousThread, currentFilter)) continue;
+    const currentThread = commentsById.get(previousThread.id);
+    if (!currentThread) continue;
+    const currentStatus = getThreadStatusFilter(currentThread);
+    if (currentStatus !== currentFilter) return currentStatus;
+  }
+  return undefined;
 }
 
 interface CommentsViewProps {
@@ -81,6 +107,8 @@ export function CommentsView({
   }>();
   const [hideReplies, setHideReplies] = useState(false);
   const commentRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const previousCommentsRef = useRef(comments);
+  const requestedStatusRef = useRef<CommentThreadStatus | undefined>(undefined);
   const { enableScope, disableScope } = useHotkeysContext();
 
   const getThreadGitLabLine = (thread: CommentThread): string | undefined => {
@@ -164,6 +192,36 @@ export function CommentsView({
       });
     }
   }, [selectedIndex]);
+
+  useEffect(() => {
+    const previousComments = previousCommentsRef.current;
+    previousCommentsRef.current = comments;
+
+    if (threadFilter === 'all') {
+      requestedStatusRef.current = undefined;
+      return;
+    }
+
+    const hadVisibleThreads = previousComments.some((thread) =>
+      threadMatchesFilter(thread, threadFilter),
+    );
+    const hasVisibleThreads = comments.some((thread) => threadMatchesFilter(thread, threadFilter));
+    const requestedStatus = requestedStatusRef.current;
+    requestedStatusRef.current = undefined;
+    if (!hadVisibleThreads || hasVisibleThreads) return;
+
+    const movedThreadFilter = getMovedThreadFilter(previousComments, comments, threadFilter);
+    const nextFilter =
+      requestedStatus && comments.some((thread) => threadMatchesFilter(thread, requestedStatus))
+        ? requestedStatus
+        : movedThreadFilter
+          ? movedThreadFilter
+          : getNextAvailableThreadFilter(comments, threadFilter);
+    if (!nextFilter) return;
+
+    setThreadFilter(nextFilter);
+    setSelectedIndex(0);
+  }, [comments, threadFilter]);
 
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-github-bg-primary">
@@ -297,7 +355,10 @@ export function CommentsView({
                         }
                         onThreadStatusChange={
                           onThreadStatusChange
-                            ? (status) => onThreadStatusChange(thread.id, status)
+                            ? (status) => {
+                                requestedStatusRef.current = status;
+                                onThreadStatusChange(thread.id, status);
+                              }
                             : undefined
                         }
                         onNavigateToCode={

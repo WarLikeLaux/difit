@@ -206,6 +206,128 @@ describe('CommentsView', () => {
     expect(screen.getByText('First root comment')).toBeInTheDocument();
   });
 
+  it('follows a thread moved out of the current filter by the user', async () => {
+    const user = userEvent.setup();
+    const onThreadStatusChange = vi.fn();
+    const view = render(
+      <CommentsView
+        comments={[mockThreads[0]!]}
+        onRemoveThread={mockRemoveThread}
+        onThreadStatusChange={onThreadStatusChange}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+      { wrapper },
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Accepted' }));
+    const acceptedThread = {
+      ...mockThreads[0]!,
+      acceptedAt: '2026-09-11T00:00:00.000Z',
+    };
+    view.rerender(
+      <CommentsView
+        comments={[acceptedThread]}
+        onRemoveThread={mockRemoveThread}
+        onThreadStatusChange={onThreadStatusChange}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Accepted (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('First root comment')).toBeInTheDocument();
+  });
+
+  it('follows a thread moved to a later status by an external update', () => {
+    const acceptedThread: CommentThread = {
+      ...mockThreads[0]!,
+      acceptedAt: '2026-09-11T00:00:00.000Z',
+    };
+    const view = render(
+      <CommentsView
+        comments={[acceptedThread]}
+        onRemoveThread={mockRemoveThread}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+      { wrapper },
+    );
+
+    view.rerender(
+      <CommentsView
+        comments={[
+          {
+            ...acceptedThread,
+            readyAt: '2026-09-11T00:01:00.000Z',
+          },
+        ]}
+        onRemoveThread={mockRemoveThread}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Ready for review (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('First root comment')).toBeInTheDocument();
+  });
+
+  it('follows the moved thread instead of an earlier non-empty status', () => {
+    const acceptedThread: CommentThread = {
+      ...mockThreads[1]!,
+      acceptedAt: '2026-09-11T00:00:00.000Z',
+    };
+    const view = render(
+      <CommentsView
+        comments={[mockThreads[0]!, acceptedThread]}
+        onRemoveThread={mockRemoveThread}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+      { wrapper },
+    );
+
+    view.rerender(
+      <CommentsView
+        comments={[
+          {
+            ...mockThreads[0]!,
+            readyAt: '2026-09-11T00:01:00.000Z',
+          },
+          acceptedThread,
+        ]}
+        onRemoveThread={mockRemoveThread}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Ready for review (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('First root comment')).toBeInTheDocument();
+    expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
+  });
+
   it('filters open and resolved threads separately', async () => {
     const user = userEvent.setup();
     const resolvedThread: CommentThread = {
