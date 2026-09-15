@@ -151,6 +151,61 @@ describe('CommentsView', () => {
     expect(screen.queryByLabelText('Resolve thread')).not.toBeInTheDocument();
   });
 
+  it('opens the first non-empty workflow status when there are no open threads', () => {
+    const readyThread: CommentThread = {
+      ...mockThreads[0]!,
+      readyAt: '2026-09-11T00:00:00.000Z',
+    };
+    const resolvedThread: CommentThread = {
+      ...mockThreads[1]!,
+      resolvedAt: '2026-09-11T00:01:00.000Z',
+    };
+
+    render(
+      <CommentsView
+        comments={[resolvedThread, readyThread]}
+        onRemoveThread={mockRemoveThread}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+      { wrapper },
+    );
+
+    expect(screen.getByRole('button', { name: 'Ready for review (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('First root comment')).toBeInTheDocument();
+    expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
+  });
+
+  it('opens resolved threads when they are the only available status', () => {
+    const resolvedThread: CommentThread = {
+      ...mockThreads[0]!,
+      resolvedAt: '2026-09-11T00:00:00.000Z',
+    };
+
+    render(
+      <CommentsView
+        comments={[resolvedThread]}
+        onRemoveThread={mockRemoveThread}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+      { wrapper },
+    );
+
+    expect(screen.getByRole('button', { name: 'Resolved (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('First root comment')).toBeInTheDocument();
+  });
+
   it('filters open and resolved threads separately', async () => {
     const user = userEvent.setup();
     const resolvedThread: CommentThread = {

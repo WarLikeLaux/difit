@@ -159,6 +159,7 @@ function App() {
   const [showSparkles, setShowSparkles] = useState(false);
   const [hasTriggeredSparkles, setHasTriggeredSparkles] = useState(false);
   const [mainView, setMainView] = useState<MainView | null>(null);
+  const [pendingCommentThreadId, setPendingCommentThreadId] = useState<string | null>(null);
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const [codeFilterText, setCodeFilterText] = useState('');
@@ -389,6 +390,34 @@ function App() {
     diffScrollContainerRef,
     setDiffData,
   });
+
+  useEffect(() => {
+    if (!pendingCommentThreadId || mainView !== 'diff' || deferredCodeFilterText.trim()) return;
+
+    let cancelled = false;
+    let frameId = 0;
+    const scrollToThread = (attempt: number) => {
+      frameId = requestAnimationFrame(() => {
+        if (cancelled) return;
+        const target = document.getElementById(`comment-thread-${pendingCommentThreadId}`);
+        if (!target) {
+          if (attempt < 12) scrollToThread(attempt + 1);
+          return;
+        }
+
+        target.scrollIntoView({ block: 'center', inline: 'nearest' });
+        setPendingCommentThreadId((current) =>
+          current === pendingCommentThreadId ? null : current,
+        );
+      });
+    };
+    scrollToThread(0);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [deferredCodeFilterText, mainView, pendingCommentThreadId, renderedFilePaths]);
 
   const visibleDiffFiles = useMemo(
     () =>
@@ -1212,10 +1241,22 @@ function App() {
       const position = findCommentPosition(thread, diffData.files);
       if (!position) return;
 
+      const filePath = diffData.files[position.fileIndex]?.path;
+      if (!filePath) return;
+
+      setCodeFilterText('');
+      ensureFilesRenderedUpTo(filePath);
+      setCollapsedFiles((current) => {
+        if (!current.has(filePath)) return current;
+        const next = new Set(current);
+        next.delete(filePath);
+        return next;
+      });
+      setPendingCommentThreadId(thread.id);
       selectMainView('diff');
       setCursorPosition(position);
     },
-    [diffData, selectMainView, setCursorPosition],
+    [diffData, ensureFilesRenderedUpTo, selectMainView, setCursorPosition],
   );
 
   const handleOpenInEditor = useCallback(

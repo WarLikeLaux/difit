@@ -624,6 +624,55 @@ describe('App Component - Comment sync', () => {
     );
   });
 
+  it('scrolls to the exact thread selected from the comments view', async () => {
+    mockComments = [
+      createMockThread({ id: 'test-1', filePath: 'test.ts', line: 10, body: 'First comment' }),
+      createMockThread({ id: 'test-2', filePath: 'test.ts', line: 10, body: 'Second comment' }),
+    ];
+    mockFetch({
+      ...mockDiffResponse,
+      files: [
+        {
+          path: 'test.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+          chunks: [
+            {
+              header: '@@ -10 +10 @@',
+              oldStart: 10,
+              oldLines: 0,
+              newStart: 10,
+              newLines: 1,
+              lines: [{ type: 'add', content: 'const value = true;', newLineNumber: 10 }],
+            },
+          ],
+        },
+      ],
+    });
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      renderApp();
+      const goToCodeButtons = await screen.findAllByRole('button', { name: 'Go to Code' });
+      fireEvent.click(goToCodeButtons[1]!);
+
+      await waitFor(() =>
+        expect(scrollIntoView).toHaveBeenCalledWith({
+          block: 'center',
+          inline: 'nearest',
+        }),
+      );
+      expect(scrollIntoView.mock.instances.at(-1)).toBe(
+        document.getElementById('comment-thread-test-2'),
+      );
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
   it('keeps the diff view open when all threads are resolved', async () => {
     mockComments = [
       {

@@ -10,6 +10,35 @@ import type { AppearanceSettings } from './SettingsModal';
 
 type ThreadFilter = 'all' | CommentThreadStatus;
 const EMPTY_DIFF_FILES: DiffFile[] = [];
+const THREAD_FILTER_ORDER: CommentThreadStatus[] = [
+  'open',
+  'accepted',
+  'to_verify',
+  'ready',
+  'resolved',
+];
+
+function threadMatchesFilter(thread: CommentThread, filter: ThreadFilter): boolean {
+  if (filter === 'open')
+    return !thread.acceptedAt && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt;
+  if (filter === 'accepted')
+    return (
+      Boolean(thread.acceptedAt) && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt
+    );
+  if (filter === 'to_verify')
+    return Boolean(thread.toVerifyAt) && !thread.readyAt && !thread.resolvedAt;
+  if (filter === 'ready') return Boolean(thread.readyAt) && !thread.resolvedAt;
+  if (filter === 'resolved') return Boolean(thread.resolvedAt);
+  return true;
+}
+
+function getInitialThreadFilter(comments: CommentThread[]): ThreadFilter {
+  return (
+    THREAD_FILTER_ORDER.find((filter) =>
+      comments.some((thread) => threadMatchesFilter(thread, filter)),
+    ) ?? 'open'
+  );
+}
 
 interface CommentsViewProps {
   comments: CommentThread[];
@@ -43,7 +72,9 @@ export function CommentsView({
   syntaxTheme,
 }: CommentsViewProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [threadFilter, setThreadFilter] = useState<ThreadFilter>('open');
+  const [threadFilter, setThreadFilter] = useState<ThreadFilter>(() =>
+    getInitialThreadFilter(comments),
+  );
   const [collapseRequest, setCollapseRequest] = useState<{
     collapsed: boolean;
     version: number;
@@ -65,19 +96,7 @@ export function CommentsView({
     return getGitLabLineFragment(line);
   };
 
-  const visibleThreads = comments.filter((thread) => {
-    if (threadFilter === 'open')
-      return !thread.acceptedAt && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt;
-    if (threadFilter === 'accepted')
-      return (
-        Boolean(thread.acceptedAt) && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt
-      );
-    if (threadFilter === 'to_verify')
-      return Boolean(thread.toVerifyAt) && !thread.readyAt && !thread.resolvedAt;
-    if (threadFilter === 'ready') return Boolean(thread.readyAt) && !thread.resolvedAt;
-    if (threadFilter === 'resolved') return Boolean(thread.resolvedAt);
-    return true;
-  });
+  const visibleThreads = comments.filter((thread) => threadMatchesFilter(thread, threadFilter));
   const sortedThreads = [...visibleThreads].sort((a, b) => {
     const getLatestActivity = (thread: CommentThread) =>
       thread.messages.reduce(
@@ -157,23 +176,23 @@ export function CommentsView({
                 ['all', `All (${comments.length})`],
                 [
                   'open',
-                  `Open (${comments.filter((thread) => !thread.acceptedAt && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt).length})`,
+                  `Open (${comments.filter((thread) => threadMatchesFilter(thread, 'open')).length})`,
                 ],
                 [
                   'accepted',
-                  `Accepted (${comments.filter((thread) => thread.acceptedAt && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt).length})`,
+                  `Accepted (${comments.filter((thread) => threadMatchesFilter(thread, 'accepted')).length})`,
                 ],
                 [
                   'to_verify',
-                  `${THREAD_STATUS_LABELS.to_verify} (${comments.filter((thread) => thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt).length})`,
+                  `${THREAD_STATUS_LABELS.to_verify} (${comments.filter((thread) => threadMatchesFilter(thread, 'to_verify')).length})`,
                 ],
                 [
                   'ready',
-                  `${THREAD_STATUS_LABELS.ready} (${comments.filter((thread) => thread.readyAt && !thread.resolvedAt).length})`,
+                  `${THREAD_STATUS_LABELS.ready} (${comments.filter((thread) => threadMatchesFilter(thread, 'ready')).length})`,
                 ],
                 [
                   'resolved',
-                  `Resolved (${comments.filter((thread) => Boolean(thread.resolvedAt)).length})`,
+                  `Resolved (${comments.filter((thread) => threadMatchesFilter(thread, 'resolved')).length})`,
                 ],
               ] as const
             ).map(([filter, label]) => (
