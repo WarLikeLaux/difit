@@ -145,16 +145,22 @@ export async function reuseExistingWorkingTreeIdentity(
 ): Promise<ReviewContext> {
   if (!context.reviewUrl || !context.followsBranch || !context.branch) return context;
 
-  const existing = (await readReviewRegistrations()).find(
-    (registration) =>
-      registration.repositoryId === context.repositoryId &&
-      registration.branch === context.branch &&
-      registration.baseRef === context.baseRef &&
-      registration.targetRef === context.targetRef &&
-      registration.baseMode === context.baseMode &&
-      registration.followsBranch &&
-      !registration.reviewUrl,
-  );
+  const matchingRegistrations = (await readReviewRegistrations())
+    .filter(
+      (registration) =>
+        registration.repositoryId === context.repositoryId &&
+        registration.branch === context.branch &&
+        registration.baseRef === context.baseRef &&
+        registration.targetRef === context.targetRef &&
+        registration.baseMode === context.baseMode &&
+        registration.followsBranch &&
+        (!registration.reviewUrl || registration.reviewUrl === context.reviewUrl),
+    )
+    .sort(
+      (left, right) =>
+        left.startedAt.localeCompare(right.startedAt) || left.id.localeCompare(right.id),
+    );
+  const existing = matchingRegistrations[0];
   if (!existing) return context;
 
   return {
