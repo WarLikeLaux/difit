@@ -36,6 +36,8 @@ describe('review registry', () => {
         legacySessionKeys: [],
       },
       5001,
+      1234,
+      'hapi-session-1',
     );
 
     expect(await readReviewRegistrations()).toEqual([
@@ -44,6 +46,8 @@ describe('review registry', () => {
         repositoryPath: '/workspace/project',
         branch: 'feature/dashboard',
         port: 5001,
+        agentAttached: true,
+        hapiSessionId: 'hapi-session-1',
       }),
     ]);
   });
@@ -67,6 +71,32 @@ describe('review registry', () => {
 
     expect(await readReviewRegistrations()).toEqual([
       expect.objectContaining({ branch: 'feature/dashboard', port: 5002 }),
+    ]);
+  });
+
+  it('keeps the HAPI session identity when a review is reopened outside the agent shell', async () => {
+    const context = {
+      id: 'review-id',
+      sessionKey: 'review:review-id',
+      repositoryId: 'repository-id',
+      repositoryPath: '/workspace/project',
+      branch: 'feature/dashboard',
+      baseRef: 'base',
+      targetRef: '.',
+      baseMode: 'merge-base' as const,
+      followsBranch: true,
+      initialHead: 'abcdef',
+      legacySessionKeys: [],
+    };
+    await registerReview(context, 5001, 1234, 'hapi-session-1');
+    await registerReview(context, 5002, 5678);
+
+    expect(await readReviewRegistrations()).toEqual([
+      expect.objectContaining({
+        hapiSessionId: 'hapi-session-1',
+        agentAttached: false,
+        port: 5002,
+      }),
     ]);
   });
 });

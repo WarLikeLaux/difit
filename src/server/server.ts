@@ -45,6 +45,7 @@ import {
   type ReviewBranchState,
 } from './review-context.js';
 import { registerReview } from './review-registry.js';
+import { updateHapiReviewLink } from './hapi-review-link.js';
 import { writeReviewSnapshot } from './review-snapshot.js';
 import {
   restrictCrossSiteBrowserRequests,
@@ -1405,13 +1406,9 @@ export async function startServer(options: ServerOptions): Promise<{
     !options.host || options.host === 'localhost' ? '127.0.0.1' : options.host,
   );
 
+  const hapiSessionId = process.env.VITEST ? undefined : process.env.HAPI_SESSION_ID?.trim();
   if (reviewContext) {
-    await registerReview(
-      reviewContext,
-      port,
-      process.pid,
-      Boolean(!process.env.VITEST && process.env.HAPI_SESSION_ID?.trim()),
-    );
+    await registerReview(reviewContext, port, process.pid, hapiSessionId);
     const baseCommitish =
       initialDiffData.baseCommitish ?? (options.stdinDiff ? 'stdin' : undefined);
     const targetCommitish =
@@ -1469,6 +1466,19 @@ export async function startServer(options: ServerOptions): Promise<{
     publicOrigin && reviewContext
       ? `${publicOrigin}/reviews/${encodeURIComponent(reviewContext.id)}/`
       : undefined;
+
+  if (browserUrl && reviewContext && hapiSessionId) {
+    void updateHapiReviewLink('attach', {
+      hapiSessionId,
+      reviewId: reviewContext.id,
+      browserUrl,
+      branch: reviewContext.branch,
+    }).catch((error: unknown) => {
+      console.warn(
+        `Warning: Failed to attach DIFIT review to HAPI session: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    });
+  }
 
   // Check if diff is empty and skip browser opening
   if (initialDiffData.isEmpty) {

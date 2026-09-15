@@ -40,6 +40,7 @@ import {
 } from './request-security.js';
 import { mergeCommentThreads } from '../utils/commentImports.js';
 import { parseUserSettingsPatch, readUserConfig, updateUserClientSettings } from './user-config.js';
+import { updateHapiReviewLink } from './hapi-review-link.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -456,6 +457,16 @@ export async function startHubServer(
       deleteAgentEventInbox(registration.id),
       deleteCommentSession(registration.repositoryId, registration.sessionKey),
     ]);
+    if (registration.hapiSessionId) {
+      void updateHapiReviewLink('detach', {
+        hapiSessionId: registration.hapiSessionId,
+        reviewId: registration.id,
+      }).catch((error: unknown) => {
+        console.warn(
+          `Warning: Failed to detach deleted DIFIT review from HAPI session: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      });
+    }
     res.json({ success: true, reviewId: registration.id });
   });
   app.get('/api/events', (_req, res) => {
