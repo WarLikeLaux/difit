@@ -44,7 +44,7 @@ import {
   getReviewBranchState,
   type ReviewBranchState,
 } from './review-context.js';
-import { registerReview } from './review-registry.js';
+import { registerReview, reuseExistingWorkingTreeIdentity } from './review-registry.js';
 import { updateHapiReviewLink } from './hapi-review-link.js';
 import { writeReviewSnapshot } from './review-snapshot.js';
 import {
@@ -159,7 +159,7 @@ export async function startServer(options: ServerOptions): Promise<{
   const repositoryId = createHash('sha256').update(repositoryPath).digest('hex');
   const initialCommentImports = options.commentImports || [];
   const requestedInitialSelection = options.selection ?? createDiffSelection('', '');
-  const reviewContext =
+  const createdReviewContext =
     options.stdinDiff || !options.selection
       ? undefined
       : await createReviewContext({
@@ -168,6 +168,9 @@ export async function startServer(options: ServerOptions): Promise<{
           selection: requestedInitialSelection,
           reviewUrl: options.reviewUrl,
         });
+  const reviewContext = createdReviewContext
+    ? await reuseExistingWorkingTreeIdentity(createdReviewContext)
+    : undefined;
   const initialSelection =
     reviewContext?.followsBranch && options.reviewUrl
       ? createDiffSelection(
@@ -1472,6 +1475,7 @@ export async function startServer(options: ServerOptions): Promise<{
       hapiSessionId,
       reviewId: reviewContext.id,
       browserUrl,
+      reviewUrl: reviewContext.reviewUrl,
       branch: reviewContext.branch,
     }).catch((error: unknown) => {
       console.warn(

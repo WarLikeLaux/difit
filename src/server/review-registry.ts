@@ -139,3 +139,28 @@ export async function readReviewRegistrations(): Promise<ReviewRegistration[]> {
     (registration): registration is ReviewRegistration => registration !== undefined,
   );
 }
+
+export async function reuseExistingWorkingTreeIdentity(
+  context: ReviewContext,
+): Promise<ReviewContext> {
+  if (!context.reviewUrl || !context.followsBranch || !context.branch) return context;
+
+  const existing = (await readReviewRegistrations()).find(
+    (registration) =>
+      registration.repositoryId === context.repositoryId &&
+      registration.branch === context.branch &&
+      registration.baseRef === context.baseRef &&
+      registration.targetRef === context.targetRef &&
+      registration.baseMode === context.baseMode &&
+      registration.followsBranch &&
+      !registration.reviewUrl,
+  );
+  if (!existing) return context;
+
+  return {
+    ...context,
+    id: existing.id,
+    sessionKey: existing.sessionKey,
+    legacySessionKeys: [...new Set([...context.legacySessionKeys, context.sessionKey])],
+  };
+}

@@ -3,7 +3,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { readReviewRegistrations, registerReview } from './review-registry.js';
+import {
+  readReviewRegistrations,
+  registerReview,
+  reuseExistingWorkingTreeIdentity,
+} from './review-registry.js';
 
 describe('review registry', () => {
   let configDir: string;
@@ -98,5 +102,36 @@ describe('review registry', () => {
         port: 5002,
       }),
     ]);
+  });
+
+  it('keeps a branch review identity when its MR is discovered later', async () => {
+    const existingContext = {
+      id: 'branch-review-id',
+      sessionKey: 'review:branch-review-id',
+      repositoryId: 'repository-id',
+      repositoryPath: '/workspace/project',
+      branch: 'feature/dashboard',
+      baseRef: 'develop',
+      targetRef: '.',
+      baseMode: 'direct' as const,
+      followsBranch: true,
+      initialHead: 'abcdef',
+      legacySessionKeys: [],
+    };
+    await registerReview(existingContext, 5001);
+
+    const resolved = await reuseExistingWorkingTreeIdentity({
+      ...existingContext,
+      id: 'mr-derived-id',
+      sessionKey: 'review:mr-derived-id',
+      reviewUrl: 'https://gitlab.example.test/group/project/-/merge_requests/1',
+    });
+
+    expect(resolved).toMatchObject({
+      id: 'branch-review-id',
+      sessionKey: 'review:branch-review-id',
+      reviewUrl: 'https://gitlab.example.test/group/project/-/merge_requests/1',
+    });
+    expect(resolved.legacySessionKeys).toContain('review:mr-derived-id');
   });
 });

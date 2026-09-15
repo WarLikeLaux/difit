@@ -4,6 +4,7 @@ export interface HapiReviewLink {
   hapiSessionId: string;
   reviewId: string;
   browserUrl?: string;
+  reviewUrl?: string;
   branch?: string;
 }
 
@@ -24,6 +25,7 @@ export function updateHapiReviewLink(
   if (action === 'attach') {
     if (!link.browserUrl) return Promise.reject(new Error('DIFIT browser URL is required'));
     args.push('--url', link.browserUrl);
+    if (link.reviewUrl) args.push('--review-url', link.reviewUrl);
     if (link.branch) args.push('--branch', link.branch);
   }
 
