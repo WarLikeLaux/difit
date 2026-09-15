@@ -18,6 +18,14 @@ type AgentReviewEvent =
     }
   | {
       seq: number;
+      type: 'accepted';
+      threadId: string;
+      filePath: string;
+      position: DiffCommentPosition;
+      acceptedAt: string;
+    }
+  | {
+      seq: number;
       type: 'toVerify';
       threadId: string;
       filePath: string;
@@ -36,6 +44,7 @@ interface StoredAgentEventInbox {
 
 type PendingAgentReviewEvent =
   | Omit<Extract<AgentReviewEvent, { type: 'userMessage' }>, 'seq'>
+  | Omit<Extract<AgentReviewEvent, { type: 'accepted' }>, 'seq'>
   | Omit<Extract<AgentReviewEvent, { type: 'toVerify' }>, 'seq'>;
 
 export interface AgentEventBatch {
@@ -86,9 +95,11 @@ export function findAgentReviewEvents(
   nextThreads: DiffCommentThread[],
 ): PendingAgentReviewEvent[] {
   const previousMessages = new Map<string, string>();
+  const previousAccepted = new Map<string, string | undefined>();
   const previousToVerify = new Map<string, string | undefined>();
 
   for (const thread of previousThreads) {
+    previousAccepted.set(thread.id, thread.acceptedAt);
     previousToVerify.set(thread.id, thread.toVerifyAt);
     for (const message of thread.messages) {
       previousMessages.set(messageIdentity(thread.id, message.id), message.updatedAt);
@@ -108,6 +119,16 @@ export function findAgentReviewEvents(
         filePath: thread.filePath,
         position: thread.position,
         message,
+      });
+    }
+
+    if (thread.acceptedAt && previousAccepted.get(thread.id) !== thread.acceptedAt) {
+      events.push({
+        type: 'accepted',
+        threadId: thread.id,
+        filePath: thread.filePath,
+        position: thread.position,
+        acceptedAt: thread.acceptedAt,
       });
     }
 
@@ -307,7 +328,7 @@ export class AgentEventInbox {
     }
 
     const message = [
-      `Difit review ${this.#reviewId} has new user feedback.`,
+      `Difit review ${this.#reviewId} has new user feedback or a requested status action.`,
       `Use the difit MCP get_events tool with port ${this.#port}; CLI fallback: difit comment events --port ${this.#port}`,
       `After handling every returned event, acknowledge the exact throughSeq with the MCP ack_events tool; CLI fallback: difit comment ack <throughSeq> --port ${this.#port}`,
     ].join('\n');

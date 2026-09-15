@@ -19,6 +19,7 @@ import {
 import { useClickOutside } from '../hooks/useClickOutside';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { buildGitLabDiffLineUrl } from '../utils/gitlabLinks';
+import { THREAD_STATUS_LABELS } from '../utils/threadStatusLabels';
 
 import { CommentBodyRenderer } from './CommentBodyRenderer';
 import { CommentForm } from './CommentForm';
@@ -413,17 +414,17 @@ export function CommentThreadCard({
             {thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt && (
               <span
                 className="inline-flex h-5 shrink-0 items-center rounded-full border border-purple-500/60 px-2 text-[10px] font-medium text-purple-400"
-                aria-label="To verify thread"
+                aria-label="Verify by agent thread"
               >
-                To verify
+                Verify by agent
               </span>
             )}
             {thread.readyAt && !thread.resolvedAt && (
               <span
                 className="inline-flex h-5 shrink-0 items-center rounded-full border border-green-500/60 px-2 text-[10px] font-medium text-green-400"
-                aria-label="Ready thread"
+                aria-label="Ready for review thread"
               >
-                Ready
+                Ready for review
               </span>
             )}
             {isCollapsed && (
@@ -466,7 +467,7 @@ export function CommentThreadCard({
                             : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
                         }`}
                       >
-                        {status === 'to_verify' ? 'To verify' : status}
+                        {THREAD_STATUS_LABELS[status]}
                       </button>
                     ),
                   )}

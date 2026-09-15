@@ -20,6 +20,7 @@ interface CommentThreadsResponse {
     id: string;
     filePath: string;
     position: unknown;
+    acceptedAt?: string;
     toVerifyAt?: string;
     readyAt?: string;
     resolvedAt?: string;
@@ -39,6 +40,7 @@ type MutableCommentStatus = 'open' | 'accepted' | 'to_verify' | 'ready';
 interface CommentWatchCursor {
   version: 1;
   messages: Record<string, string>;
+  acceptedThreads: Record<string, string>;
   toVerifyThreads: Record<string, string>;
 }
 
@@ -50,6 +52,15 @@ interface UserCommentEvent {
   body: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface AcceptedEvent {
+  event: 'accepted';
+  threadId: string;
+  filePath: string;
+  position: unknown;
+  acceptedAt: string;
+  messages: NonNullable<CommentThreadsResponse['threads']>[number]['messages'];
 }
 
 interface ToVerifyEvent {
@@ -126,6 +137,10 @@ async function readWatchCursor(path: string): Promise<CommentWatchCursor | undef
     return {
       version: 1,
       messages: parsed.messages,
+      acceptedThreads:
+        parsed.acceptedThreads && typeof parsed.acceptedThreads === 'object'
+          ? parsed.acceptedThreads
+          : {},
       toVerifyThreads:
         parsed.toVerifyThreads && typeof parsed.toVerifyThreads === 'object'
           ? parsed.toVerifyThreads
@@ -151,6 +166,18 @@ async function emitUnseenCommentEvents(
 ): Promise<CommentWatchCursor> {
   const data = await fetchCommentThreads(port);
   const events = getUserCommentEvents(data);
+  const acceptedEvents: AcceptedEvent[] = (data.threads ?? [])
+    .filter((thread): thread is typeof thread & { acceptedAt: string } =>
+      Boolean(thread.acceptedAt),
+    )
+    .map((thread) => ({
+      event: 'accepted',
+      threadId: thread.id,
+      filePath: thread.filePath,
+      position: thread.position,
+      acceptedAt: thread.acceptedAt,
+      messages: thread.messages,
+    }));
   const toVerifyEvents: ToVerifyEvent[] = (data.threads ?? [])
     .filter((thread): thread is typeof thread & { toVerifyAt: string } =>
       Boolean(thread.toVerifyAt),
@@ -166,11 +193,14 @@ async function emitUnseenCommentEvents(
   const nextCursor: CommentWatchCursor = cursor ?? {
     version: 1,
     messages: {},
+    acceptedThreads: {},
     toVerifyThreads: {},
   };
 
   if (!cursor) {
     for (const event of events) nextCursor.messages[getCursorMessageKey(event)] = event.updatedAt;
+    for (const event of acceptedEvents)
+      nextCursor.acceptedThreads[event.threadId] = event.acceptedAt;
     for (const event of toVerifyEvents)
       nextCursor.toVerifyThreads[event.threadId] = event.toVerifyAt;
     await writeWatchCursor(cursorFile, nextCursor);
@@ -182,6 +212,13 @@ async function emitUnseenCommentEvents(
     if (nextCursor.messages[key] === event.updatedAt) continue;
     console.log(JSON.stringify(event));
     nextCursor.messages[key] = event.updatedAt;
+    await writeWatchCursor(cursorFile, nextCursor);
+  }
+
+  for (const event of acceptedEvents) {
+    if (nextCursor.acceptedThreads[event.threadId] === event.acceptedAt) continue;
+    console.log(JSON.stringify(event));
+    nextCursor.acceptedThreads[event.threadId] = event.acceptedAt;
     await writeWatchCursor(cursorFile, nextCursor);
   }
 
@@ -631,14 +668,24 @@ export function createCommentCommand(): Command {
       }
     });
 
-  addStatusCommand(comment, 'accept', 'accepted', 'Mark comment threads as accepted');
+  addStatusCommand(
+    comment,
+    'accept',
+    'accepted',
+    'Record that the reviewer approved comment threads for implementation',
+  );
   addStatusCommand(
     comment,
     'verify',
     'to_verify',
-    'Mark comment threads as ready for verification',
+    'Ask the attached agent to verify comment threads',
   );
-  addStatusCommand(comment, 'ready', 'ready', 'Mark comment threads as verified and ready');
+  addStatusCommand(
+    comment,
+    'ready',
+    'ready',
+    'Mark completed agent work as ready for reviewer confirmation',
+  );
   addStatusCommand(comment, 'reopen', 'open', 'Move comment threads back to open');
 
   return comment;
