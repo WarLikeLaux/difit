@@ -41,6 +41,16 @@ HAPI-сессии, и тогда комментарии сохранятся, н
 - `difit` — HEAD;
 - `difit <target> [base]` — конкретный commit или range.
 
+Для GitLab MR сначала прочитай `source_branch`, `target_branch` и `web_url` через read-only
+`glab mr view --output json`. Если checkout находится на `source_branch` и в нём есть staged,
+unstaged или untracked изменения, открывай единый актуальный review командой
+`difit . <target_branch> --include-untracked --gitlab-mr <web_url> --background`. Он должен
+содержать и коммиты ветки относительно target, и всё текущее рабочее дерево. Чистую ветку можно
+открыть как `difit HEAD <target_branch> --gitlab-mr <web_url> --background`. Фиксированный
+commit-to-commit review используй только когда пользователь явно просит состояние без локальных
+изменений или checkout не является source-веткой MR. Всегда передавай известный `web_url` явно:
+автоопределение служит страховкой, а не заменяет уже полученную каноническую ссылку.
+
 Если используется `npx difit`, замени только имя команды, сохранив остальные аргументы.
 
 ## Identity, snapshot и повторное подключение

@@ -22,6 +22,47 @@ function readGitLabMergeRequestUrl(
     : undefined;
 }
 
+function readCurrentBranch(repoPath: string | undefined, execFile: ExecFile): string | undefined {
+  const branch = execFile('git', ['branch', '--show-current'], {
+    cwd: repoPath,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
+  return branch || undefined;
+}
+
+function listGitLabMergeRequestUrl(
+  repoPath: string | undefined,
+  branch: string,
+  execFile: ExecFile,
+): string | undefined {
+  const output = execFile(
+    'glab',
+    [
+      'mr',
+      'list',
+      '--source-branch',
+      branch,
+      '--state',
+      'opened',
+      '--per-page',
+      '1',
+      '--output',
+      'json',
+    ],
+    {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5_000,
+      env: { ...process.env, GLAB_PROMPT_DISABLED: 'true' },
+    },
+  );
+  const result = JSON.parse(output) as Array<{ web_url?: unknown }>;
+  const url = result[0]?.web_url;
+  return typeof url === 'string' ? normalizeGitLabMergeRequestUrl(url) : undefined;
+}
+
 function resolvesToCurrentHead(
   repoPath: string | undefined,
   targetCommitish: string,
@@ -70,15 +111,19 @@ export function detectGitLabMergeRequestUrl(
       : [targetCommitish.replace(/^origin\//, '')];
 
   try {
-    return readGitLabMergeRequestUrl(repoPath, branchArgument, execFile);
+    const direct = readGitLabMergeRequestUrl(repoPath, branchArgument, execFile);
+    if (direct) return direct;
   } catch {
-    if (branchArgument.length === 0) return undefined;
+    // Fall through to an explicit source-branch lookup.
+  }
 
-    try {
-      if (!resolvesToCurrentHead(repoPath, targetCommitish, execFile)) return undefined;
-      return readGitLabMergeRequestUrl(repoPath, [], execFile);
-    } catch {
+  try {
+    if (branchArgument.length > 0 && !resolvesToCurrentHead(repoPath, targetCommitish, execFile)) {
       return undefined;
     }
+    const branch = readCurrentBranch(repoPath, execFile);
+    return branch ? listGitLabMergeRequestUrl(repoPath, branch, execFile) : undefined;
+  } catch {
+    return undefined;
   }
 }
