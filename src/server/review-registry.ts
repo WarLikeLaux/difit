@@ -24,6 +24,7 @@ export interface ReviewRegistration {
   startedAt: string;
   updatedAt: string;
   agentAttached?: boolean;
+  hapiSessionId?: string;
 }
 
 function getConfigDirectory(): string {
@@ -59,18 +60,20 @@ export async function registerReview(
   context: ReviewContext,
   port: number,
   pid = process.pid,
-  agentAttached = false,
+  hapiSessionId?: string,
 ): Promise<ReviewRegistration> {
   const now = new Date().toISOString();
   const path = getRegistrationPath(context.id);
   let startedAt = now;
   let branch = context.branch;
+  let previousHapiSessionId: string | undefined;
 
   try {
     const existing = JSON.parse(await fs.readFile(path, 'utf8')) as unknown;
     if (isReviewRegistration(existing) && typeof existing.startedAt === 'string') {
       startedAt = existing.startedAt;
       branch ??= existing.branch;
+      previousHapiSessionId = existing.hapiSessionId;
     }
   } catch {
     // First launch of this review.
@@ -93,7 +96,8 @@ export async function registerReview(
     pid,
     startedAt,
     updatedAt: now,
-    agentAttached,
+    agentAttached: Boolean(hapiSessionId?.trim()),
+    hapiSessionId: hapiSessionId?.trim() || previousHapiSessionId,
   };
 
   if (isReviewRegistryDisabled()) return registration;
