@@ -134,4 +134,71 @@ describe('review registry', () => {
     });
     expect(resolved.legacySessionKeys).toContain('review:mr-derived-id');
   });
+
+  it('keeps the original review identity when the same MR is reopened', async () => {
+    const existingContext = {
+      id: 'branch-review-id',
+      sessionKey: 'review:branch-review-id',
+      repositoryId: 'repository-id',
+      repositoryPath: '/workspace/project',
+      branch: 'feature/dashboard',
+      baseRef: 'develop',
+      targetRef: '.',
+      baseMode: 'direct' as const,
+      reviewUrl: 'https://gitlab.example.test/group/project/-/merge_requests/1',
+      followsBranch: true,
+      initialHead: 'abcdef',
+      legacySessionKeys: [],
+    };
+    const original = await registerReview(existingContext, 5001);
+    const duplicateContext = {
+      ...existingContext,
+      id: 'mr-derived-id',
+      sessionKey: 'review:mr-derived-id',
+    };
+    const duplicate = await registerReview(duplicateContext, 5002);
+    await fs.writeFile(
+      join(configDir, 'reviews', `${original.id}.json`),
+      `${JSON.stringify({ ...original, startedAt: '2026-09-15T10:00:00.000Z' }, null, 2)}\n`,
+    );
+    await fs.writeFile(
+      join(configDir, 'reviews', `${duplicate.id}.json`),
+      `${JSON.stringify({ ...duplicate, startedAt: '2026-09-15T11:00:00.000Z' }, null, 2)}\n`,
+    );
+
+    const resolved = await reuseExistingWorkingTreeIdentity(duplicateContext);
+
+    expect(resolved).toMatchObject({
+      id: 'branch-review-id',
+      sessionKey: 'review:branch-review-id',
+    });
+    expect(resolved.legacySessionKeys).toContain('review:mr-derived-id');
+  });
+
+  it('does not reuse an identity from a different MR on the same branch', async () => {
+    const existingContext = {
+      id: 'first-review-id',
+      sessionKey: 'review:first-review-id',
+      repositoryId: 'repository-id',
+      repositoryPath: '/workspace/project',
+      branch: 'feature/dashboard',
+      baseRef: 'develop',
+      targetRef: '.',
+      baseMode: 'direct' as const,
+      reviewUrl: 'https://gitlab.example.test/group/project/-/merge_requests/1',
+      followsBranch: true,
+      initialHead: 'abcdef',
+      legacySessionKeys: [],
+    };
+    await registerReview(existingContext, 5001);
+
+    const nextContext = {
+      ...existingContext,
+      id: 'second-review-id',
+      sessionKey: 'review:second-review-id',
+      reviewUrl: 'https://gitlab.example.test/group/project/-/merge_requests/2',
+    };
+
+    await expect(reuseExistingWorkingTreeIdentity(nextContext)).resolves.toEqual(nextContext);
+  });
 });
