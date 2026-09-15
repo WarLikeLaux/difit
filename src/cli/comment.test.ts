@@ -409,7 +409,7 @@ describe('comment subcommand integration', () => {
       ]);
     });
 
-    it('streams each new User message and To verify transition once and persists its cursor', async () => {
+    it('streams each new User message and Accepted or To verify transition once', async () => {
       const temporaryDirectory = await fs.mkdtemp(join(tmpdir(), 'difit-watch-'));
       const cursorFile = join(temporaryDirectory, 'mr-57.cursor');
       const existingMessage = {
@@ -455,6 +455,7 @@ describe('comment subcommand integration', () => {
             threads: [
               {
                 ...thread,
+                acceptedAt: '2026-09-11T11:04:00.000Z',
                 toVerifyAt: '2026-09-11T11:05:00.000Z',
                 messages: [existingMessage, newMessage],
               },
@@ -467,6 +468,7 @@ describe('comment subcommand integration', () => {
             threads: [
               {
                 ...thread,
+                acceptedAt: '2026-09-11T11:04:00.000Z',
                 toVerifyAt: '2026-09-11T11:05:00.000Z',
                 messages: [existingMessage, newMessage],
               },
@@ -491,6 +493,14 @@ describe('comment subcommand integration', () => {
           updatedAt: newMessage.updatedAt,
         },
         {
+          event: 'accepted',
+          threadId: 'thread-1',
+          filePath: 'src/app.ts',
+          position: { side: 'new', line: 12 },
+          acceptedAt: '2026-09-11T11:04:00.000Z',
+          messages: [existingMessage, newMessage],
+        },
+        {
           event: 'toVerify',
           threadId: 'thread-1',
           filePath: 'src/app.ts',
@@ -501,11 +511,15 @@ describe('comment subcommand integration', () => {
       ]);
       const cursor = JSON.parse(await fs.readFile(cursorFile, 'utf8')) as {
         messages: Record<string, string>;
+        acceptedThreads: Record<string, string>;
         toVerifyThreads: Record<string, string>;
       };
       expect(cursor.messages).toEqual({
         '["thread-1","message-1"]': existingMessage.updatedAt,
         '["thread-1","message-2"]': newMessage.updatedAt,
+      });
+      expect(cursor.acceptedThreads).toEqual({
+        'thread-1': '2026-09-11T11:04:00.000Z',
       });
       expect(cursor.toVerifyThreads).toEqual({
         'thread-1': '2026-09-11T11:05:00.000Z',

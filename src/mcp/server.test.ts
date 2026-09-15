@@ -38,6 +38,12 @@ describe('difit MCP server', () => {
       'edit_message',
       'set_thread_status',
     ]);
+
+    const statusTool = tools.tools.find((tool) => tool.name === 'set_thread_status');
+    expect(statusTool?.description).toContain('Never edit code for an Open thread');
+    expect(statusTool?.inputSchema).toMatchObject({
+      properties: { status: { enum: ['open', 'ready'] } },
+    });
   });
 
   it('reads and acknowledges durable events through authenticated difit HTTP APIs', async () => {

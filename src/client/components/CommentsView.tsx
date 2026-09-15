@@ -3,6 +3,7 @@ import { useHotkeys, useHotkeysContext } from 'react-hotkeys-hook';
 
 import type { CommentThread, CommentThreadStatus, DiffFile } from '../../types/diff';
 import { getGitLabLineFragment } from '../utils/gitlabLinks';
+import { THREAD_STATUS_LABELS } from '../utils/threadStatusLabels';
 
 import { CommentThreadCard } from './CommentThreadCard';
 import type { AppearanceSettings } from './SettingsModal';
@@ -164,11 +165,11 @@ export function CommentsView({
                 ],
                 [
                   'to_verify',
-                  `To verify (${comments.filter((thread) => thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt).length})`,
+                  `${THREAD_STATUS_LABELS.to_verify} (${comments.filter((thread) => thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt).length})`,
                 ],
                 [
                   'ready',
-                  `Ready (${comments.filter((thread) => thread.readyAt && !thread.resolvedAt).length})`,
+                  `${THREAD_STATUS_LABELS.ready} (${comments.filter((thread) => thread.readyAt && !thread.resolvedAt).length})`,
                 ],
                 [
                   'resolved',

@@ -236,13 +236,13 @@ describe('CommentsView', () => {
     );
 
     expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'To verify (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Verify by agent (1)' }));
     expect(screen.getByText('Second root comment')).toBeInTheDocument();
-    expect(screen.getByLabelText('To verify thread')).toBeInTheDocument();
+    expect(screen.getByLabelText('Verify by agent thread')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Ready (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Ready for review (1)' }));
     expect(screen.getByText('Third root comment')).toBeInTheDocument();
-    expect(screen.getByLabelText('Ready thread')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ready for review thread')).toBeInTheDocument();
   });
 
   it('provides thread workflow, navigation, deletion, and reply visibility controls', async () => {
@@ -265,7 +265,7 @@ describe('CommentsView', () => {
       { wrapper },
     );
 
-    await user.click(screen.getByRole('button', { name: 'accepted' }));
+    await user.click(screen.getByRole('button', { name: 'Accepted' }));
     expect(onThreadStatusChange).toHaveBeenCalledWith('thread-1', 'accepted');
 
     await user.click(screen.getByRole('button', { name: 'Go to Code' }));

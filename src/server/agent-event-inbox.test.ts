@@ -9,7 +9,10 @@ import { AgentEventInbox, findAgentReviewEvents } from './agent-event-inbox.js';
 
 const temporaryDirectories: string[] = [];
 
-function thread(messages: DiffCommentThread['messages'], toVerifyAt?: string): DiffCommentThread {
+function thread(
+  messages: DiffCommentThread['messages'],
+  statuses: Pick<DiffCommentThread, 'acceptedAt' | 'toVerifyAt'> = {},
+): DiffCommentThread {
   return {
     id: 'thread-1',
     filePath: 'src/app.ts',
@@ -17,7 +20,7 @@ function thread(messages: DiffCommentThread['messages'], toVerifyAt?: string): D
     updatedAt: '2026-09-13T10:00:00.000Z',
     position: { side: 'new', line: 12 },
     messages,
-    toVerifyAt,
+    ...statuses,
   };
 }
 
@@ -40,7 +43,7 @@ afterEach(async () => {
 });
 
 describe('findAgentReviewEvents', () => {
-  it('finds new and edited User messages plus To verify transitions', () => {
+  it('finds new and edited User messages plus Accepted and To verify transitions', () => {
     const existing = message('message-1', 'before');
     const edited = message('message-1', 'after', 'User', '2026-09-13T10:01:00.000Z');
     const added = message('message-2', 'new');
@@ -49,11 +52,20 @@ describe('findAgentReviewEvents', () => {
     expect(
       findAgentReviewEvents(
         [thread([existing])],
-        [thread([edited, added, agent], '2026-09-13T10:02:00.000Z')],
+        [
+          thread([edited, added, agent], {
+            acceptedAt: '2026-09-13T10:01:30.000Z',
+            toVerifyAt: '2026-09-13T10:02:00.000Z',
+          }),
+        ],
       ),
     ).toEqual([
       expect.objectContaining({ type: 'userMessage', message: edited }),
       expect.objectContaining({ type: 'userMessage', message: added }),
+      expect.objectContaining({
+        type: 'accepted',
+        acceptedAt: '2026-09-13T10:01:30.000Z',
+      }),
       expect.objectContaining({ type: 'toVerify', toVerifyAt: '2026-09-13T10:02:00.000Z' }),
     ]);
   });
