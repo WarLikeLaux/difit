@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { HotkeysProvider } from 'react-hotkeys-hook';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom';
@@ -734,6 +734,44 @@ describe('App Component - Comment sync', () => {
       expect(screen.queryByRole('heading', { name: 'Comments' })).not.toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: 'Split' })).toHaveClass('bg-github-bg-primary');
+  });
+
+  it('previews code without leaving the comments view', async () => {
+    mockComments = [
+      createMockThread({ id: 'preview-thread', filePath: 'test.ts', line: 10, body: 'Preview me' }),
+    ];
+    mockFetch({
+      ...mockDiffResponse,
+      files: [
+        {
+          path: 'test.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+          chunks: [
+            {
+              header: '@@ -10 +10 @@',
+              oldStart: 10,
+              oldLines: 0,
+              newStart: 10,
+              newLines: 1,
+              lines: [{ type: 'add', content: 'const value = true;', newLineNumber: 10 }],
+            },
+          ],
+        },
+      ],
+    });
+
+    renderApp();
+    fireEvent.click(await screen.findByRole('button', { name: 'Show Code' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Code preview' });
+    expect(within(dialog).getByText(/^test\.ts:10/, { selector: 'p' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: 'test.ts' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Comments' })).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close code preview' }));
+    expect(screen.queryByRole('dialog', { name: 'Code preview' })).not.toBeInTheDocument();
   });
 
   it('keeps the diff view open when all threads are resolved', async () => {

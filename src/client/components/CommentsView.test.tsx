@@ -427,6 +427,7 @@ describe('CommentsView', () => {
     const onDeleteThread = vi.fn();
     const onThreadStatusChange = vi.fn();
     const onNavigateToCode = vi.fn();
+    const onShowCode = vi.fn();
     render(
       <CommentsView
         comments={[mockThreads[0]!]}
@@ -434,6 +435,7 @@ describe('CommentsView', () => {
         onDeleteThread={onDeleteThread}
         onThreadStatusChange={onThreadStatusChange}
         onNavigateToCode={onNavigateToCode}
+        onShowCode={onShowCode}
         onGenerateThreadPrompt={mockGenerateThreadPrompt}
         onReplyToThread={mockReplyToThread}
         onRemoveMessage={mockRemoveMessage}
@@ -447,6 +449,9 @@ describe('CommentsView', () => {
 
     await user.click(screen.getByRole('button', { name: 'Go to Code' }));
     expect(onNavigateToCode).toHaveBeenCalledWith(mockThreads[0]);
+
+    await user.click(screen.getByRole('button', { name: 'Show Code' }));
+    expect(onShowCode).toHaveBeenCalledWith(mockThreads[0]);
 
     const hideRepliesButtons = screen.getAllByRole('button', { name: 'Hide replies' });
     expect(hideRepliesButtons).toHaveLength(2);

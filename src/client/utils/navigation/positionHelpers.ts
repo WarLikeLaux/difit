@@ -75,3 +75,50 @@ export function findCommentPosition(
     findLinePosition(file, fileIndex, targetLineNumber, 'old')
   );
 }
+
+/** Finds the rendered line closest to a comment whose original line no longer exists. */
+export function findClosestCommentPosition(
+  commentThread: CommentThread,
+  files: DiffFile[],
+): CursorPosition | null {
+  const fileIndex = files.findIndex((file) => file.path === commentThread.file);
+  const file = files[fileIndex];
+  if (fileIndex === -1 || !file) return null;
+
+  const targetLineNumber = Array.isArray(commentThread.line)
+    ? commentThread.line[1]
+    : commentThread.line;
+  const preferredSide = commentThread.side;
+  let closestPosition: CursorPosition | null = null;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  let closestIsPreferred = false;
+
+  for (let chunkIndex = 0; chunkIndex < file.chunks.length; chunkIndex += 1) {
+    const chunk = file.chunks[chunkIndex];
+    if (!chunk) continue;
+    for (let lineIndex = 0; lineIndex < chunk.lines.length; lineIndex += 1) {
+      const line = chunk.lines[lineIndex];
+      if (!line) continue;
+      const candidates = [
+        { number: line.newLineNumber, side: 'new' as const, cursorSide: 'right' as const },
+        { number: line.oldLineNumber, side: 'old' as const, cursorSide: 'left' as const },
+      ];
+
+      for (const candidate of candidates) {
+        if (candidate.number === undefined) continue;
+        const distance = Math.abs(candidate.number - targetLineNumber);
+        const isPreferred = candidate.side === preferredSide;
+        if (
+          distance < closestDistance ||
+          (distance === closestDistance && isPreferred && !closestIsPreferred)
+        ) {
+          closestPosition = { fileIndex, chunkIndex, lineIndex, side: candidate.cursorSide };
+          closestDistance = distance;
+          closestIsPreferred = isPreferred;
+        }
+      }
+    }
+  }
+
+  return closestPosition;
+}

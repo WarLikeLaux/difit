@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CommentThread, DiffFile } from '../../../types/diff';
 
-import { findCommentPosition } from './positionHelpers';
+import { findClosestCommentPosition, findCommentPosition } from './positionHelpers';
 
 const mockFiles: DiffFile[] = [
   {
@@ -54,6 +54,17 @@ describe('findCommentPosition', () => {
       fileIndex: 0,
       chunkIndex: 0,
       lineIndex: 1,
+      side: 'right',
+    });
+  });
+
+  it('returns the closest rendered line when the comment line no longer exists', () => {
+    const thread = { ...createThread('new'), line: 50 };
+
+    expect(findClosestCommentPosition(thread, mockFiles)).toEqual({
+      fileIndex: 0,
+      chunkIndex: 0,
+      lineIndex: 2,
       side: 'right',
     });
   });
