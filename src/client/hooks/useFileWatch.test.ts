@@ -160,6 +160,30 @@ describe('useFileWatch', () => {
       });
     });
 
+    it('automatically reloads after watch events when a reload callback is available', async () => {
+      const onReload = vi.fn().mockResolvedValue(undefined);
+      const { result } = renderHook(() => useFileWatch(onReload));
+
+      await waitFor(() => {
+        expect(result.current.isConnected).toBe(true);
+      });
+
+      act(() => {
+        MockEventSource.instances[0]!.dispatchMessage(
+          JSON.stringify({
+            type: 'reload',
+            diffMode: DiffMode.WORKING,
+            changeType: 'file',
+            timestamp: new Date().toISOString(),
+          }),
+        );
+      });
+
+      expect(result.current.shouldReload).toBe(false);
+      await waitFor(() => expect(onReload).toHaveBeenCalledTimes(1));
+      expect(result.current.shouldReload).toBe(false);
+    });
+
     it('should handle error events', async () => {
       const { result } = renderHook(() => useFileWatch());
 
@@ -207,7 +231,7 @@ describe('useFileWatch', () => {
   });
 
   describe('reload functionality', () => {
-    it('should call onReload callback when reload is triggered', async () => {
+    it('supports a manual reload', async () => {
       const mockOnReload = vi.fn().mockResolvedValue(undefined);
       const { result } = renderHook(() => useFileWatch(mockOnReload));
 
@@ -215,34 +239,14 @@ describe('useFileWatch', () => {
         expect(result.current.isConnected).toBe(true);
       });
 
-      // Set shouldReload state first
-      const eventSource = MockEventSource.instances[0]!;
-      act(() => {
-        eventSource.dispatchMessage(
-          JSON.stringify({
-            type: 'reload',
-            diffMode: DiffMode.DEFAULT,
-            changeType: 'file',
-            timestamp: new Date().toISOString(),
-          }),
-        );
-      });
-
-      await waitFor(() => {
-        expect(result.current.shouldReload).toBe(true);
-      });
-
-      // Trigger reload
       act(() => {
         result.current.reload();
       });
 
       await waitFor(() => {
-        expect(mockOnReload).toHaveBeenCalled();
-        expect(result.current.watchState.isReloading).toBe(true);
+        expect(mockOnReload).toHaveBeenCalledTimes(1);
       });
 
-      // Wait for reload to complete
       await waitFor(() => {
         expect(result.current.watchState.isReloading).toBe(false);
         expect(result.current.shouldReload).toBe(false);
@@ -257,24 +261,6 @@ describe('useFileWatch', () => {
         expect(result.current.isConnected).toBe(true);
       });
 
-      // Set shouldReload state first
-      const eventSource = MockEventSource.instances[0]!;
-      act(() => {
-        eventSource.dispatchMessage(
-          JSON.stringify({
-            type: 'reload',
-            diffMode: DiffMode.DEFAULT,
-            changeType: 'file',
-            timestamp: new Date().toISOString(),
-          }),
-        );
-      });
-
-      await waitFor(() => {
-        expect(result.current.shouldReload).toBe(true);
-      });
-
-      // Trigger reload
       act(() => {
         result.current.reload();
       });
@@ -282,52 +268,49 @@ describe('useFileWatch', () => {
       await waitFor(() => {
         expect(result.current.error).toBe('Failed to reload diff data');
         expect(result.current.watchState.isReloading).toBe(false);
+        expect(result.current.shouldReload).toBe(true);
       });
     });
 
-    it('should not reload if already reloading', async () => {
+    it('queues one follow-up reload while a reload is in progress', async () => {
+      let resolveFirstReload: (() => void) | undefined;
+      const firstReload = new Promise<void>((resolve) => {
+        resolveFirstReload = resolve;
+      });
       const mockOnReload = vi
         .fn()
-        .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)));
+        .mockImplementationOnce(() => firstReload)
+        .mockResolvedValue(undefined);
       const { result } = renderHook(() => useFileWatch(mockOnReload));
 
       await waitFor(() => {
         expect(result.current.isConnected).toBe(true);
       });
 
-      // Set shouldReload state first
-      const eventSource = MockEventSource.instances[0]!;
-      act(() => {
-        eventSource.dispatchMessage(
-          JSON.stringify({
-            type: 'reload',
-            diffMode: DiffMode.DEFAULT,
-            changeType: 'file',
-            timestamp: new Date().toISOString(),
-          }),
-        );
-      });
-
-      await waitFor(() => {
-        expect(result.current.shouldReload).toBe(true);
-      });
-
-      // Trigger first reload
       act(() => {
         result.current.reload();
       });
 
       await waitFor(() => {
+        expect(mockOnReload).toHaveBeenCalledTimes(1);
         expect(result.current.watchState.isReloading).toBe(true);
       });
 
-      // Try to trigger second reload while first is in progress
       act(() => {
         result.current.reload();
       });
 
-      // Should only call onReload once
       expect(mockOnReload).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveFirstReload?.();
+        await firstReload;
+      });
+
+      await waitFor(() => {
+        expect(mockOnReload).toHaveBeenCalledTimes(2);
+        expect(result.current.watchState.isReloading).toBe(false);
+      });
     });
   });
 

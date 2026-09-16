@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DiffMode, type ClientWatchState, type WatchEvent } from '../../types/watch.js';
 import { resolveEventSourceUrl } from '../utils/eventSourceUrl';
 
+const AUTO_RELOAD_DELAY_MS = 200;
+
 interface FileWatchHook {
   shouldReload: boolean;
   isConnected: boolean;
@@ -17,7 +19,13 @@ export function useFileWatch(
 ): FileWatchHook {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const autoReloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  const reloadInFlightRef = useRef(false);
+  const reloadQueuedRef = useRef(false);
+  const onReloadRef = useRef(onReload);
+  const autoReloadRef = useRef<() => void>(() => undefined);
+  onReloadRef.current = onReload;
   const maxReconnectAttempts = 5;
   const reconnectDelay = 3000; // 3 seconds
 
@@ -68,13 +76,22 @@ export function useFileWatch(
               break;
 
             case 'reload':
-              console.log('File changes detected, showing reload button:', data.changeType);
+              console.log('File changes detected:', data.changeType);
               setWatchState((prev) => ({
                 ...prev,
-                shouldReload: true,
+                shouldReload: !onReloadRef.current,
                 lastChangeTime: new Date(),
                 lastChangeType: data.changeType,
               }));
+              if (onReloadRef.current) {
+                if (autoReloadTimeoutRef.current) {
+                  clearTimeout(autoReloadTimeoutRef.current);
+                }
+                autoReloadTimeoutRef.current = setTimeout(() => {
+                  autoReloadTimeoutRef.current = null;
+                  autoReloadRef.current();
+                }, AUTO_RELOAD_DELAY_MS);
+              }
               break;
 
             case 'error':
@@ -134,9 +151,11 @@ export function useFileWatch(
   }, [maxReconnectAttempts, onCommentsChanged, reconnectDelay]);
 
   const handleReload = useCallback(async () => {
-    if (watchState.isReloading) {
-      return; // Already reloading
+    if (reloadInFlightRef.current) {
+      reloadQueuedRef.current = true;
+      return;
     }
+    reloadInFlightRef.current = true;
 
     setWatchState((prev) => ({
       ...prev,
@@ -144,8 +163,8 @@ export function useFileWatch(
     }));
 
     try {
-      if (onReload) {
-        await onReload();
+      if (onReloadRef.current) {
+        await onReloadRef.current();
       }
 
       // Reset reload state after successful reload
@@ -162,10 +181,18 @@ export function useFileWatch(
 
       setWatchState((prev) => ({
         ...prev,
+        shouldReload: true,
         isReloading: false,
       }));
+    } finally {
+      reloadInFlightRef.current = false;
+      if (reloadQueuedRef.current) {
+        reloadQueuedRef.current = false;
+        queueMicrotask(() => autoReloadRef.current());
+      }
     }
-  }, [onReload, watchState.isReloading]);
+  }, []);
+  autoReloadRef.current = () => void handleReload();
 
   const cleanup = () => {
     if (eventSourceRef.current) {
@@ -176,6 +203,11 @@ export function useFileWatch(
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+    }
+
+    if (autoReloadTimeoutRef.current) {
+      clearTimeout(autoReloadTimeoutRef.current);
+      autoReloadTimeoutRef.current = null;
     }
   };
 
