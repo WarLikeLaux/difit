@@ -696,6 +696,46 @@ describe('App Component - Comment sync', () => {
     }
   });
 
+  it('opens the commented file when an outdated line is absent from the current diff', async () => {
+    mockComments = [
+      createMockThread({
+        id: 'outdated-thread',
+        filePath: 'test.ts',
+        line: 333,
+        body: 'Outdated comment',
+      }),
+    ];
+    mockFetch({
+      ...mockDiffResponse,
+      files: [
+        {
+          path: 'test.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+          chunks: [
+            {
+              header: '@@ -10 +10 @@',
+              oldStart: 10,
+              oldLines: 0,
+              newStart: 10,
+              newLines: 1,
+              lines: [{ type: 'add', content: 'const value = true;', newLineNumber: 10 }],
+            },
+          ],
+        },
+      ],
+    });
+
+    renderApp();
+    fireEvent.click(await screen.findByRole('button', { name: 'Go to Code' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Comments' })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Split' })).toHaveClass('bg-github-bg-primary');
+  });
+
   it('keeps the diff view open when all threads are resolved', async () => {
     mockComments = [
       {
