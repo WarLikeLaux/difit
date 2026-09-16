@@ -774,6 +774,71 @@ describe('App Component - Comment sync', () => {
     expect(screen.queryByRole('dialog', { name: 'Code preview' })).not.toBeInTheDocument();
   });
 
+  it('keeps full-file preview expansion out of the main diff', async () => {
+    mockComments = [
+      createMockThread({ id: 'preview-thread', filePath: 'test.ts', line: 3, body: 'Preview me' }),
+    ];
+    const diffResponse: DiffResponse = {
+      ...mockDiffResponse,
+      files: [
+        {
+          path: 'test.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+          chunks: [
+            {
+              header: '@@ -3,0 +3 @@',
+              oldStart: 3,
+              oldLines: 0,
+              newStart: 3,
+              newLines: 1,
+              lines: [{ type: 'add', content: 'changed', newLineNumber: 3 }],
+            },
+          ],
+        },
+      ],
+    };
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation((url: string) => {
+      if (url.includes('/api/revisions')) {
+        return Promise.resolve({ ok: true, json: async () => ({ branches: [], commits: [] }) });
+      }
+      if (url.includes('/api/line-count/')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ oldLineCount: 5, newLineCount: 6 }),
+        });
+      }
+      if (url.includes('/api/blob/')) {
+        return Promise.resolve({
+          ok: true,
+          text: async () => ['one', 'two', 'three', 'four', 'five', 'six'].join('\n'),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => diffResponse });
+    });
+
+    renderApp();
+
+    const mainExpandButtons = await screen.findAllByRole('button', {
+      name: /Expand all .* hidden lines/,
+    });
+    const mainExpandButtonLabels = mainExpandButtons.map((button) => button.textContent);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show Code' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Code preview' });
+    await waitFor(() => {
+      expect(within(dialog).getByRole('heading', { name: 'test.ts' })).toBeInTheDocument();
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close code preview' }));
+
+    expect(
+      screen
+        .getAllByRole('button', { name: /Expand all .* hidden lines/ })
+        .map((button) => button.textContent),
+    ).toEqual(mainExpandButtonLabels);
+  });
+
   it('keeps the diff view open when all threads are resolved', async () => {
     mockComments = [
       {

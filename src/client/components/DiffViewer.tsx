@@ -91,6 +91,9 @@ type Gap = {
   prevChunkIndex?: number;
 };
 
+const AUTO_EXPAND_COMMENT_CONTEXT = 3;
+const MAX_AUTO_EXPAND_COMMENT_LINES = 40;
+
 const normalizeCommentRanges = (threads: CommentThread[]): Record<DiffSide, LineRange[]> => {
   const ranges: Record<DiffSide, LineRange[]> = { old: [], new: [] };
 
@@ -177,6 +180,30 @@ const getLastChunkIndex = (mergedChunks: MergedChunk[]): number | null => {
   const lastMerged = mergedChunks[mergedChunks.length - 1];
   const lastIndex = lastMerged?.originalIndices[lastMerged.originalIndices.length - 1];
   return lastIndex ?? null;
+};
+
+const isCommentRangeVisible = (
+  range: LineRange,
+  side: DiffSide,
+  mergedChunks: MergedChunk[],
+): boolean => {
+  const visibleLines = new Set<number>();
+  mergedChunks.forEach((chunk) => {
+    chunk.lines.forEach((line) => {
+      const lineNumber = side === 'old' ? line.oldLineNumber : line.newLineNumber;
+      if (lineNumber !== undefined) visibleLines.add(lineNumber);
+    });
+  });
+
+  for (let line = range.start; line <= range.end; line += 1) {
+    if (!visibleLines.has(line)) return false;
+  }
+  return true;
+};
+
+const clampAutoExpandCount = (count: number, hiddenLines: number): number | null => {
+  const clamped = Math.min(count, hiddenLines);
+  return clamped <= MAX_AUTO_EXPAND_COMMENT_LINES ? clamped : null;
 };
 
 export const DiffViewer = memo(function DiffViewer({
@@ -290,16 +317,30 @@ export const DiffViewer = memo(function DiffViewer({
       const gaps = buildGaps(ranges);
 
       gaps.forEach((gap) => {
-        const hasComment = commentRanges.some(
-          (range) => range.start <= gap.end && range.end >= gap.start,
+        const hiddenCommentRanges = commentRanges.filter(
+          (range) =>
+            range.start <= gap.end &&
+            range.end >= gap.start &&
+            !isCommentRangeVisible(range, side, mergedChunks),
         );
-        if (!hasComment) return;
+        if (hiddenCommentRanges.length === 0) return;
 
         if (gap.type === 'after' && lastMerged && lastChunkIndex !== null) {
           if (lastMerged.hiddenLinesAfter > 0) {
-            queueExpand(`after-${lastChunkIndex}`, () => {
-              void expandLines(file, lastChunkIndex, 'down', lastMerged.hiddenLinesAfter);
-            });
+            const counts = hiddenCommentRanges
+              .map((range) =>
+                clampAutoExpandCount(
+                  range.end - gap.start + 1 + AUTO_EXPAND_COMMENT_CONTEXT,
+                  lastMerged.hiddenLinesAfter,
+                ),
+              )
+              .filter((count): count is number => count !== null);
+            const count = counts.length > 0 ? Math.min(...counts) : null;
+            if (count !== null) {
+              queueExpand(`after-${lastChunkIndex}`, () => {
+                void expandLines(file, lastChunkIndex, 'down', count);
+              });
+            }
           }
           return;
         }
@@ -310,19 +351,54 @@ export const DiffViewer = memo(function DiffViewer({
         if (!mergedChunk || mergedChunk.hiddenLinesBefore <= 0) return;
 
         if (gap.type === 'before') {
-          queueExpand(`before-${nextChunkIndex}`, () => {
-            void expandLines(file, nextChunkIndex, 'up', mergedChunk.hiddenLinesBefore);
-          });
+          const counts = hiddenCommentRanges
+            .map((range) =>
+              clampAutoExpandCount(
+                gap.end - range.start + 1 + AUTO_EXPAND_COMMENT_CONTEXT,
+                mergedChunk.hiddenLinesBefore,
+              ),
+            )
+            .filter((count): count is number => count !== null);
+          const count = counts.length > 0 ? Math.min(...counts) : null;
+          if (count !== null) {
+            queueExpand(`before-${nextChunkIndex}`, () => {
+              void expandLines(file, nextChunkIndex, 'up', count);
+            });
+          }
         } else if (gap.type === 'between') {
-          queueExpand(`between-${nextChunkIndex}`, () => {
-            void expandAllBetweenChunks(file, nextChunkIndex, mergedChunk.hiddenLinesBefore);
+          const previousChunkIndex = gap.prevChunkIndex;
+          if (previousChunkIndex === undefined) return;
+
+          const candidates = hiddenCommentRanges.flatMap((range) => {
+            const downCount = clampAutoExpandCount(
+              range.end - gap.start + 1 + AUTO_EXPAND_COMMENT_CONTEXT,
+              mergedChunk.hiddenLinesBefore,
+            );
+            const upCount = clampAutoExpandCount(
+              gap.end - range.start + 1 + AUTO_EXPAND_COMMENT_CONTEXT,
+              mergedChunk.hiddenLinesBefore,
+            );
+            return [
+              ...(downCount === null ? [] : [{ direction: 'down' as const, count: downCount }]),
+              ...(upCount === null ? [] : [{ direction: 'up' as const, count: upCount }]),
+            ];
           });
+          const candidate = candidates.sort((left, right) => left.count - right.count)[0];
+
+          if (candidate?.direction === 'down') {
+            queueExpand(`between-down-${previousChunkIndex}`, () => {
+              void expandLines(file, previousChunkIndex, 'down', candidate.count);
+            });
+          } else if (candidate?.direction === 'up') {
+            queueExpand(`between-up-${nextChunkIndex}`, () => {
+              void expandLines(file, nextChunkIndex, 'up', candidate.count);
+            });
+          }
         }
       });
     });
   }, [
     threads,
-    expandAllBetweenChunks,
     expandLines,
     file,
     isCollapsed,
