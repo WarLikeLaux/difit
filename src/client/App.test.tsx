@@ -797,6 +797,55 @@ describe('App Component - Comment sync', () => {
       'bg-github-bg-primary',
     );
   });
+
+  it('hides resolved threads in the diff until they are explicitly shown', async () => {
+    mockComments = [
+      {
+        ...createMockThread({
+          id: 'resolved-thread',
+          filePath: 'test.ts',
+          line: 10,
+          body: 'Resolved comment',
+        }),
+        resolvedAt: '2026-09-16T00:00:00.000Z',
+      },
+    ];
+    mockFetch({
+      ...mockDiffResponse,
+      files: [
+        {
+          path: 'test.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+          chunks: [
+            {
+              header: '@@ -10 +10 @@',
+              oldStart: 10,
+              oldLines: 0,
+              newStart: 10,
+              newLines: 1,
+              lines: [{ type: 'add', content: 'const value = true;', newLineNumber: 10 }],
+            },
+          ],
+        },
+      ],
+    });
+
+    renderApp();
+
+    const showResolved = await screen.findByRole('button', {
+      name: 'Show resolved comments (1)',
+    });
+    expect(document.getElementById('comment-thread-resolved-thread')).not.toBeInTheDocument();
+
+    fireEvent.click(showResolved);
+
+    await waitFor(() => {
+      expect(document.getElementById('comment-thread-resolved-thread')).toBeInTheDocument();
+    });
+    expect(window.localStorage.getItem('difit.diff.showResolvedComments')).toBe('true');
+  });
 });
 
 describe('App Component - Diff Mode Persistence', () => {

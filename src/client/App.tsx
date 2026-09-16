@@ -8,6 +8,8 @@ import {
   List,
   ExternalLink,
   ArrowLeft,
+  Eye,
+  EyeOff,
   LogOut,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
@@ -82,6 +84,7 @@ const EMPTY_MERGED_CHUNKS: MergedChunk[] = [];
 const DIFF_VIEW_MODE_STORAGE_KEY = 'difit.diffViewMode';
 const SIDEBAR_WIDTH_STORAGE_KEY = 'difit.sidebarWidth';
 const SIDEBAR_OPEN_STORAGE_KEY = 'difit.sidebarOpen';
+const SHOW_RESOLVED_STORAGE_KEY = 'difit.diff.showResolvedComments';
 const SIDEBAR_MIN_WIDTH = 200;
 const SIDEBAR_MAX_WIDTH = 600;
 const SIDEBAR_DEFAULT_WIDTH = 280;
@@ -148,10 +151,16 @@ const getStoredSidebarOpen = (): boolean | null => {
 
 const getInitialFileTreeOpen = () => getStoredSidebarOpen() ?? true;
 
+const getInitialShowResolvedComments = () => {
+  if (typeof window === 'undefined') return false;
+  return window.localStorage.getItem(SHOW_RESOLVED_STORAGE_KEY) === 'true';
+};
+
 type MainView = 'diff' | 'comments';
 
 function App() {
   const [diffData, setDiffData] = useState<DiffResponse | null>(null);
+  const diffDataRef = useRef<DiffResponse | null>(null);
   const [diffDataVersion, setDiffDataVersion] = useState(0);
   const [diffMode, setDiffMode] = useState<DiffViewMode>(getInitialDiffViewMode);
   const [loading, setLoading] = useState(true);
@@ -159,6 +168,7 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState(getInitialSidebarWidth);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFileTreeOpen, setIsFileTreeOpen] = useState(getInitialFileTreeOpen);
+  const [showResolvedComments, setShowResolvedComments] = useState(getInitialShowResolvedComments);
   const [isDragging, setIsDragging] = useState(false);
   const [showSparkles, setShowSparkles] = useState(false);
   const [hasTriggeredSparkles, setHasTriggeredSparkles] = useState(false);
@@ -173,6 +183,7 @@ function App() {
   const deferredCodeFilterText = useDeferredValue(codeFilterText);
   const collapsedInitializedRef = useRef(false);
   const diffScrollContainerRef = useRef<HTMLElement | null>(null);
+  diffDataRef.current = diffData;
 
   // Revision selector state
   const [revisionOptions, setRevisionOptions] = useState<RevisionsResponse | null>(null);
@@ -573,6 +584,18 @@ function App() {
     saveClientSettings({ diffViewMode: mode });
   }, []);
 
+  const toggleResolvedComments = useCallback(() => {
+    setShowResolvedComments((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(SHOW_RESOLVED_STORAGE_KEY, String(next));
+      } catch {
+        // Ignore localStorage errors (e.g. disabled storage).
+      }
+      return next;
+    });
+  }, []);
+
   // Lift expand state to App level so navigation and rendering share the same merged chunks
   const {
     isLoading: isExpandLoading,
@@ -656,6 +679,17 @@ function App() {
       })),
     [threads, fileLineIndexByPath],
   );
+  const resolvedThreadCount = useMemo(
+    () => normalizedThreads.filter((thread) => Boolean(thread.resolvedAt)).length,
+    [normalizedThreads],
+  );
+  const diffThreads = useMemo(
+    () =>
+      showResolvedComments
+        ? normalizedThreads
+        : normalizedThreads.filter((thread) => !thread.resolvedAt),
+    [normalizedThreads, showResolvedComments],
+  );
   const codePreviewThread = useMemo(
     () => normalizedThreads.find((thread) => thread.id === codePreviewThreadId) ?? null,
     [codePreviewThreadId, normalizedThreads],
@@ -733,7 +767,7 @@ function App() {
   );
   const threadsByFile = useMemo(() => {
     const map = new Map<string, CommentThread[]>();
-    normalizedThreads.forEach((thread) => {
+    diffThreads.forEach((thread) => {
       const entry = map.get(thread.file);
       if (entry) {
         entry.push(thread);
@@ -742,7 +776,7 @@ function App() {
       }
     });
     return map;
-  }, [normalizedThreads]);
+  }, [diffThreads]);
 
   // State to trigger comment creation from keyboard
   const [commentTrigger, setCommentTrigger] = useState<{
@@ -781,7 +815,7 @@ function App() {
   const { cursor, isHelpOpen, setIsHelpOpen, setCursorPosition, rememberFilePosition } =
     useKeyboardNavigation({
       files: navigableFiles,
-      comments: normalizedThreads,
+      comments: diffThreads,
       viewMode: diffMode,
       reviewedFiles: viewedFiles,
       onToggleReviewed: toggleFileReviewed,
@@ -916,8 +950,11 @@ function App() {
         if (diffRequestIdRef.current !== requestId) {
           return;
         }
-        setDiffData(data);
-        setDiffDataVersion((prev) => prev + 1);
+        if (JSON.stringify(diffDataRef.current) !== JSON.stringify(data)) {
+          diffDataRef.current = data;
+          setDiffData(data);
+          setDiffDataVersion((prev) => prev + 1);
+        }
 
         // Update resolved revision state from server response
         setResolvedBaseRevision(
@@ -1585,6 +1622,33 @@ function App() {
                   Comments ({threads.length})
                 </button>
               </div>
+              {mainView === 'diff' && resolvedThreadCount > 0 && (
+                <button
+                  type="button"
+                  aria-pressed={showResolvedComments}
+                  aria-label={
+                    showResolvedComments
+                      ? 'Hide resolved comments'
+                      : `Show resolved comments (${resolvedThreadCount})`
+                  }
+                  title={
+                    showResolvedComments
+                      ? 'Hide resolved comments'
+                      : `Show resolved comments (${resolvedThreadCount})`
+                  }
+                  onClick={toggleResolvedComments}
+                  className={`flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-xs transition-colors ${
+                    showResolvedComments
+                      ? 'border-blue-500 bg-blue-500/10 text-github-text-primary'
+                      : 'border-github-border text-github-text-secondary hover:bg-github-bg-tertiary hover:text-github-text-primary'
+                  }`}
+                >
+                  {showResolvedComments ? <Eye size={14} /> : <EyeOff size={14} />}
+                  <span className={isMobile ? 'sr-only' : undefined}>
+                    Resolved ({resolvedThreadCount})
+                  </span>
+                </button>
+              )}
               {/* File Watch Reload Button */}
               <ReloadButton
                 shouldReload={shouldReload}
@@ -1818,7 +1882,7 @@ function App() {
                   files={diffData.files}
                   onScrollToFile={scrollVisibleFileIntoDiffContainer}
                   onFileSelected={isMobile ? handleMobileFileSelected : undefined}
-                  comments={normalizedThreads}
+                  comments={diffThreads}
                   reviewedFiles={viewedFiles}
                   onToggleReviewed={toggleFileReviewed}
                   onToggleFolderReviewed={toggleFolderReviewed}
