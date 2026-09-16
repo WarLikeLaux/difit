@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { LoaderCircle, X } from 'lucide-react';
 import { type ReactNode, useEffect, useRef } from 'react';
 import { useHotkeysContext } from 'react-hotkeys-hook';
 
@@ -45,6 +45,8 @@ export function CodePreviewModal({
   }, [disableScope, enableScope, onClose]);
 
   useEffect(() => {
+    if (isLoading) return;
+
     let cancelled = false;
     let frameId = 0;
 
@@ -79,7 +81,7 @@ export function CodePreviewModal({
       cancelled = true;
       cancelAnimationFrame(frameId);
     };
-  }, [targetPosition, thread.id]);
+  }, [isLoading, targetPosition, thread.id]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
@@ -111,7 +113,20 @@ export function CodePreviewModal({
             <X size={18} />
           </button>
         </header>
-        <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          {isLoading ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex h-full min-h-48 items-center justify-center gap-2 text-sm text-github-text-secondary"
+            >
+              <LoaderCircle size={16} className="animate-spin" aria-hidden="true" />
+              <span>Loading full file…</span>
+            </div>
+          ) : (
+            children
+          )}
+        </div>
       </div>
     </div>
   );
