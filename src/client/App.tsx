@@ -608,6 +608,17 @@ function App() {
     targetCommitish: diffData?.targetCommitish,
     diffIdentity: diffDataVersion,
   });
+  const {
+    isLoading: isCodePreviewExpandLoading,
+    expandLines: expandCodePreviewLines,
+    expandAllBetweenChunks: expandAllCodePreviewBetweenChunks,
+    prefetchFileContent: prefetchCodePreviewFileContent,
+    getMergedChunks: getCodePreviewMergedChunks,
+  } = useExpandedLines({
+    baseCommitish: diffData?.baseCommitish,
+    targetCommitish: diffData?.targetCommitish,
+    diffIdentity: diffDataVersion,
+  });
 
   const getMergedChunksRef = useRef(getMergedChunks);
   useEffect(() => {
@@ -701,8 +712,8 @@ function App() {
     [codePreviewThread, diffData?.files],
   );
   const codePreviewMergedChunks = useMemo(
-    () => (codePreviewFile ? getMergedChunks(codePreviewFile) : EMPTY_MERGED_CHUNKS),
-    [codePreviewFile, getMergedChunks],
+    () => (codePreviewFile ? getCodePreviewMergedChunks(codePreviewFile) : EMPTY_MERGED_CHUNKS),
+    [codePreviewFile, getCodePreviewMergedChunks],
   );
   const codePreviewNavigableFile = useMemo(
     () => (codePreviewFile ? { ...codePreviewFile, chunks: codePreviewMergedChunks } : null),
@@ -721,7 +732,8 @@ function App() {
   );
 
   useEffect(() => {
-    if (!codePreviewFile || codePreviewMergedChunks.length === 0 || isExpandLoading) return;
+    if (!codePreviewFile || codePreviewMergedChunks.length === 0 || isCodePreviewExpandLoading)
+      return;
 
     const expansionKey = `${codePreviewFile.path}:${codePreviewMergedChunks
       .map((chunk) => `${chunk.hiddenLinesBefore}/${chunk.hiddenLinesAfter}`)
@@ -730,7 +742,7 @@ function App() {
 
     if (codePreviewMergedChunks.some((chunk) => chunk.hiddenLinesAfter < 0)) {
       codePreviewExpansionKeyRef.current = expansionKey;
-      void prefetchFileContent(codePreviewFile);
+      void prefetchCodePreviewFileContent(codePreviewFile);
       return;
     }
 
@@ -740,8 +752,12 @@ function App() {
       if (firstChunkIndex === undefined) continue;
       codePreviewExpansionKeyRef.current = expansionKey;
       void (firstChunkIndex === 0
-        ? expandLines(codePreviewFile, firstChunkIndex, 'up', chunk.hiddenLinesBefore)
-        : expandAllBetweenChunks(codePreviewFile, firstChunkIndex, chunk.hiddenLinesBefore));
+        ? expandCodePreviewLines(codePreviewFile, firstChunkIndex, 'up', chunk.hiddenLinesBefore)
+        : expandAllCodePreviewBetweenChunks(
+            codePreviewFile,
+            firstChunkIndex,
+            chunk.hiddenLinesBefore,
+          ));
       return;
     }
 
@@ -749,15 +765,20 @@ function App() {
     const lastChunkIndex = lastChunk?.originalIndices.at(-1);
     if (lastChunk && lastChunk.hiddenLinesAfter > 0 && lastChunkIndex !== undefined) {
       codePreviewExpansionKeyRef.current = expansionKey;
-      void expandLines(codePreviewFile, lastChunkIndex, 'down', lastChunk.hiddenLinesAfter);
+      void expandCodePreviewLines(
+        codePreviewFile,
+        lastChunkIndex,
+        'down',
+        lastChunk.hiddenLinesAfter,
+      );
     }
   }, [
     codePreviewFile,
     codePreviewMergedChunks,
-    expandAllBetweenChunks,
-    expandLines,
-    isExpandLoading,
-    prefetchFileContent,
+    expandAllCodePreviewBetweenChunks,
+    expandCodePreviewLines,
+    isCodePreviewExpandLoading,
+    prefetchCodePreviewFileContent,
   ]);
 
   const showAuthorBadges = useMemo(
@@ -1764,7 +1785,7 @@ function App() {
           <CodePreviewModal
             thread={codePreviewThread}
             targetPosition={codePreviewPosition}
-            isLoading={isExpandLoading || codePreviewHasHiddenLines}
+            isLoading={isCodePreviewExpandLoading || codePreviewHasHiddenLines}
             onClose={handleCloseCodePreview}
           >
             <DiffViewer
@@ -1795,10 +1816,10 @@ function App() {
               isFocused={true}
               fileIndex={0}
               mergedChunks={codePreviewMergedChunks}
-              expandLines={expandLines}
-              expandAllBetweenChunks={expandAllBetweenChunks}
-              prefetchFileContent={prefetchFileContent}
-              isExpandLoading={isExpandLoading}
+              expandLines={expandCodePreviewLines}
+              expandAllBetweenChunks={expandAllCodePreviewBetweenChunks}
+              prefetchFileContent={prefetchCodePreviewFileContent}
+              isExpandLoading={isCodePreviewExpandLoading}
               diffVersion={diffDataVersion}
             />
           </CodePreviewModal>
