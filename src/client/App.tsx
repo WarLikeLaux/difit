@@ -1231,11 +1231,15 @@ function App() {
     (thread: CommentThread) => {
       if (!diffData) return;
 
-      const position = findCommentPosition(thread, diffData.files);
-      if (!position) return;
+      const fileIndex = diffData.files.findIndex((file) => file.path === thread.file);
+      if (fileIndex === -1) return;
 
-      const filePath = diffData.files[position.fileIndex]?.path;
+      const filePath = diffData.files[fileIndex]?.path;
       if (!filePath) return;
+
+      // Expanded context lines live in navigableFiles rather than diffData.files.
+      // This is especially common for outdated comments on unchanged lines.
+      const position = findCommentPosition(thread, navigableFiles);
 
       setCodeFilterText('');
       ensureFilesRenderedUpTo(filePath);
@@ -1245,11 +1249,24 @@ function App() {
         next.delete(filePath);
         return next;
       });
-      setPendingCommentThreadId(thread.id);
       selectMainView('diff');
-      setCursorPosition(position);
+
+      if (position) {
+        setPendingCommentThreadId(thread.id);
+        setCursorPosition(position);
+      } else {
+        setPendingCommentThreadId(null);
+        scrollFileIntoDiffContainer(filePath);
+      }
     },
-    [diffData, ensureFilesRenderedUpTo, selectMainView, setCursorPosition],
+    [
+      diffData,
+      ensureFilesRenderedUpTo,
+      navigableFiles,
+      scrollFileIntoDiffContainer,
+      selectMainView,
+      setCursorPosition,
+    ],
   );
 
   const handleOpenInEditor = useCallback(
