@@ -31,6 +31,7 @@ import {
   normalizeBaseMode,
 } from '../utils/diffSelection';
 
+import { CodePreviewModal } from './components/CodePreviewModal';
 import { CommentsView } from './components/CommentsView';
 import { DiffQuickMenu } from './components/DiffQuickMenu';
 import { DiffViewer } from './components/DiffViewer';
@@ -63,7 +64,10 @@ import {
 import { copyTextToClipboard } from './utils/clipboard';
 import { updateCodeSearchHighlights } from './utils/codeSearchHighlight';
 import { getFileElementId } from './utils/domUtils';
-import { findCommentPosition } from './utils/navigation/positionHelpers';
+import {
+  findClosestCommentPosition,
+  findCommentPosition,
+} from './utils/navigation/positionHelpers';
 import { resolveEventSourceUrl } from './utils/eventSourceUrl';
 import { buildGitLabMergeRequestUrl } from './utils/gitlabLinks';
 import {
@@ -160,6 +164,9 @@ function App() {
   const [hasTriggeredSparkles, setHasTriggeredSparkles] = useState(false);
   const [mainView, setMainView] = useState<MainView | null>(null);
   const [pendingCommentThreadId, setPendingCommentThreadId] = useState<string | null>(null);
+  const [codePreviewThreadId, setCodePreviewThreadId] = useState<string | null>(null);
+  const [isCodePreviewCollapsed, setIsCodePreviewCollapsed] = useState(false);
+  const codePreviewExpansionKeyRef = useRef<string | null>(null);
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const [codeFilterText, setCodeFilterText] = useState('');
@@ -649,6 +656,77 @@ function App() {
       })),
     [threads, fileLineIndexByPath],
   );
+  const codePreviewThread = useMemo(
+    () => normalizedThreads.find((thread) => thread.id === codePreviewThreadId) ?? null,
+    [codePreviewThreadId, normalizedThreads],
+  );
+  const codePreviewFile = useMemo(
+    () =>
+      codePreviewThread
+        ? (diffData?.files.find((file) => file.path === codePreviewThread.file) ?? null)
+        : null,
+    [codePreviewThread, diffData?.files],
+  );
+  const codePreviewMergedChunks = useMemo(
+    () => (codePreviewFile ? getMergedChunks(codePreviewFile) : EMPTY_MERGED_CHUNKS),
+    [codePreviewFile, getMergedChunks],
+  );
+  const codePreviewNavigableFile = useMemo(
+    () => (codePreviewFile ? { ...codePreviewFile, chunks: codePreviewMergedChunks } : null),
+    [codePreviewFile, codePreviewMergedChunks],
+  );
+  const codePreviewPosition = useMemo(() => {
+    if (!codePreviewThread || !codePreviewNavigableFile) return null;
+    const files = [codePreviewNavigableFile];
+    return (
+      findCommentPosition(codePreviewThread, files) ??
+      findClosestCommentPosition(codePreviewThread, files)
+    );
+  }, [codePreviewNavigableFile, codePreviewThread]);
+  const codePreviewHasHiddenLines = codePreviewMergedChunks.some(
+    (chunk) => chunk.hiddenLinesBefore > 0 || chunk.hiddenLinesAfter !== 0,
+  );
+
+  useEffect(() => {
+    if (!codePreviewFile || codePreviewMergedChunks.length === 0 || isExpandLoading) return;
+
+    const expansionKey = `${codePreviewFile.path}:${codePreviewMergedChunks
+      .map((chunk) => `${chunk.hiddenLinesBefore}/${chunk.hiddenLinesAfter}`)
+      .join(',')}`;
+    if (codePreviewExpansionKeyRef.current === expansionKey) return;
+
+    if (codePreviewMergedChunks.some((chunk) => chunk.hiddenLinesAfter < 0)) {
+      codePreviewExpansionKeyRef.current = expansionKey;
+      void prefetchFileContent(codePreviewFile);
+      return;
+    }
+
+    for (const chunk of codePreviewMergedChunks) {
+      if (chunk.hiddenLinesBefore <= 0) continue;
+      const firstChunkIndex = chunk.originalIndices[0];
+      if (firstChunkIndex === undefined) continue;
+      codePreviewExpansionKeyRef.current = expansionKey;
+      void (firstChunkIndex === 0
+        ? expandLines(codePreviewFile, firstChunkIndex, 'up', chunk.hiddenLinesBefore)
+        : expandAllBetweenChunks(codePreviewFile, firstChunkIndex, chunk.hiddenLinesBefore));
+      return;
+    }
+
+    const lastChunk = codePreviewMergedChunks.at(-1);
+    const lastChunkIndex = lastChunk?.originalIndices.at(-1);
+    if (lastChunk && lastChunk.hiddenLinesAfter > 0 && lastChunkIndex !== undefined) {
+      codePreviewExpansionKeyRef.current = expansionKey;
+      void expandLines(codePreviewFile, lastChunkIndex, 'down', lastChunk.hiddenLinesAfter);
+    }
+  }, [
+    codePreviewFile,
+    codePreviewMergedChunks,
+    expandAllBetweenChunks,
+    expandLines,
+    isExpandLoading,
+    prefetchFileContent,
+  ]);
+
   const showAuthorBadges = useMemo(
     () => hasMultipleCommentAuthors(normalizedThreads.flatMap((thread) => thread.messages)),
     [normalizedThreads],
@@ -1269,6 +1347,21 @@ function App() {
     ],
   );
 
+  const handleShowCode = useCallback(
+    (thread: CommentThread) => {
+      ensureFileRendered(thread.file);
+      codePreviewExpansionKeyRef.current = null;
+      setIsCodePreviewCollapsed(false);
+      setCodePreviewThreadId(thread.id);
+    },
+    [ensureFileRendered],
+  );
+
+  const handleCloseCodePreview = useCallback(() => {
+    codePreviewExpansionKeyRef.current = null;
+    setCodePreviewThreadId(null);
+  }, []);
+
   const handleOpenInEditor = useCallback(
     async (filePath: string, lineNumber: number) => {
       try {
@@ -1614,6 +1707,50 @@ function App() {
           />
         )}
 
+        {codePreviewThread && codePreviewFile && codePreviewNavigableFile && (
+          <CodePreviewModal
+            thread={codePreviewThread}
+            targetPosition={codePreviewPosition}
+            isLoading={isExpandLoading || codePreviewHasHiddenLines}
+            onClose={handleCloseCodePreview}
+          >
+            <DiffViewer
+              file={codePreviewFile}
+              threads={EMPTY_COMMENT_THREADS}
+              showAuthorBadges={showAuthorBadges}
+              reviewUrl={diffData.reviewUrl}
+              diffMode={diffMode}
+              reviewedFiles={viewedFiles}
+              isChangedSinceViewed={changedSinceViewedFiles.has(codePreviewFile.path)}
+              onToggleReviewed={handleViewedButtonToggle}
+              collapsedFiles={isCodePreviewCollapsed ? new Set([codePreviewFile.path]) : new Set()}
+              onToggleCollapsed={() => setIsCodePreviewCollapsed((collapsed) => !collapsed)}
+              onToggleAllCollapsed={setIsCodePreviewCollapsed}
+              onAddComment={handleAddComment}
+              onGenerateThreadPrompt={handleGenerateThreadPrompt}
+              onRemoveThread={removeThread}
+              onDeleteThread={deleteThread}
+              onThreadStatusChange={setThreadStatus}
+              onReplyToThread={handleReplyToThread}
+              onRemoveMessage={removeMessage}
+              onUpdateMessage={updateMessage}
+              onOpenInEditor={canOpenInEditor ? handleOpenInEditor : undefined}
+              syntaxTheme={settings.syntaxTheme}
+              baseCommitish={diffData.baseCommitish}
+              targetCommitish={diffData.targetCommitish}
+              cursor={codePreviewPosition}
+              isFocused={true}
+              fileIndex={0}
+              mergedChunks={codePreviewMergedChunks}
+              expandLines={expandLines}
+              expandAllBetweenChunks={expandAllBetweenChunks}
+              prefetchFileContent={prefetchFileContent}
+              isExpandLoading={isExpandLoading}
+              diffVersion={diffDataVersion}
+            />
+          </CodePreviewModal>
+        )}
+
         {mainView === null && (
           <main className="flex flex-1 items-center justify-center text-sm text-github-text-secondary">
             Loading comments…
@@ -1630,6 +1767,7 @@ function App() {
             onDeleteThread={deleteThread}
             onThreadStatusChange={setThreadStatus}
             onNavigateToCode={handleNavigateToComment}
+            onShowCode={handleShowCode}
             onGenerateThreadPrompt={handleGenerateThreadPrompt}
             onReplyToThread={handleReplyToThread}
             onRemoveMessage={removeMessage}

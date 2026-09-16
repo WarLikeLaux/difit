@@ -5,6 +5,7 @@ import {
   Edit2,
   ExternalLink,
   FileCode2,
+  FileSearch,
   MessageSquare,
   Navigation,
   Trash2,
@@ -218,6 +219,7 @@ interface CommentThreadCardProps {
   onDeleteThread?: () => void;
   onThreadStatusChange?: (status: CommentThreadStatus) => void;
   onNavigateToCode?: () => void;
+  onShowCode?: () => void;
   collapseRequest?: { collapsed: boolean; version: number };
   hideReplies?: boolean;
   onReplyToThread: (threadId: string, body: string) => Promise<void>;
@@ -237,6 +239,7 @@ export function CommentThreadCard({
   onDeleteThread,
   onThreadStatusChange,
   onNavigateToCode,
+  onShowCode,
   collapseRequest,
   hideReplies = false,
   onReplyToThread,
@@ -473,7 +476,7 @@ export function CommentThreadCard({
                   )}
                 </div>
               )}
-              <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+              <div className="ml-auto flex shrink-0 items-center justify-end gap-1.5">
                 {onNavigateToCode && (
                   <button
                     type="button"
@@ -486,6 +489,20 @@ export function CommentThreadCard({
                   >
                     <Navigation size={12} />
                     Go to Code
+                  </button>
+                )}
+                {onShowCode && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onShowCode();
+                    }}
+                    className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-primary transition-all hover:bg-github-bg-primary"
+                    title="Preview the full file at this comment"
+                  >
+                    <FileSearch size={12} />
+                    Show Code
                   </button>
                 )}
                 {reviewLineUrl && (
@@ -512,19 +529,6 @@ export function CommentThreadCard({
                     {isFileCopied ? 'Copied!' : 'Copy File'}
                   </span>
                 </button>
-                {thread.messages.length > 1 && (
-                  <button
-                    type="button"
-                    aria-pressed={repliesHidden}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setRepliesHiddenOverride(!repliesHidden);
-                    }}
-                    className="whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-secondary transition-all hover:bg-github-bg-primary hover:text-github-text-primary"
-                  >
-                    {repliesHidden ? 'Show replies' : 'Hide replies'}
-                  </button>
-                )}
                 {onDeleteThread &&
                   (isDeleteConfirming ? (
                     <div
@@ -583,19 +587,32 @@ export function CommentThreadCard({
             hideAction={Boolean(thread.resolvedAt) || Boolean(onThreadStatusChange)}
           />
 
-          {!repliesHidden && hiddenEarlierReplies > 0 && (
-            <div className="ml-4 flex justify-end">
+          {replyMessages.length > 0 && (
+            <div className="ml-4 flex items-center justify-end gap-3">
+              {!repliesHidden && hiddenEarlierReplies > 0 && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setShowAllReplies((current) => !current);
+                  }}
+                  className="text-xs text-blue-400 hover:text-blue-300 hover:underline"
+                >
+                  {showAllReplies
+                    ? 'Show latest conversation'
+                    : `Show ${hiddenEarlierReplies} earlier ${hiddenEarlierReplies === 1 ? 'reply' : 'replies'}`}
+                </button>
+              )}
               <button
                 type="button"
+                aria-pressed={repliesHidden}
                 onClick={(event) => {
                   event.stopPropagation();
-                  setShowAllReplies((current) => !current);
+                  setRepliesHiddenOverride(!repliesHidden);
                 }}
-                className="text-xs text-blue-400 hover:text-blue-300 hover:underline"
+                className="text-xs text-github-text-muted hover:text-github-text-primary hover:underline"
               >
-                {showAllReplies
-                  ? 'Show latest conversation'
-                  : `Show ${hiddenEarlierReplies} earlier ${hiddenEarlierReplies === 1 ? 'reply' : 'replies'}`}
+                {repliesHidden ? 'Show replies' : 'Hide replies'}
               </button>
             </div>
           )}

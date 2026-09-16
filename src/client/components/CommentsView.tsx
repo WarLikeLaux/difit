@@ -75,6 +75,7 @@ interface CommentsViewProps {
   onDeleteThread?: (threadId: string) => void;
   onThreadStatusChange?: (threadId: string, status: CommentThreadStatus) => void;
   onNavigateToCode?: (thread: CommentThread) => void;
+  onShowCode?: (thread: CommentThread) => void;
   onGenerateThreadPrompt: (thread: CommentThread) => string;
   onReplyToThread: (threadId: string, body: string) => Promise<void>;
   onRemoveMessage: (threadId: string, messageId: string) => void;
@@ -91,6 +92,7 @@ export function CommentsView({
   onDeleteThread,
   onThreadStatusChange,
   onNavigateToCode,
+  onShowCode,
   onGenerateThreadPrompt,
   onReplyToThread,
   onRemoveMessage,
@@ -364,6 +366,7 @@ export function CommentsView({
                         onNavigateToCode={
                           onNavigateToCode ? () => onNavigateToCode(thread) : undefined
                         }
+                        onShowCode={onShowCode ? () => onShowCode(thread) : undefined}
                         collapseRequest={collapseRequest}
                         hideReplies={hideReplies}
                         onReplyToThread={onReplyToThread}

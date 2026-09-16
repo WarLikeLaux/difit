@@ -37,6 +37,14 @@ export function useLazyDiffRendering({
   const renderedRevisionKeyRef = useRef<string | null>(null);
   const scrollRequestIdRef = useRef(0);
 
+  useEffect(
+    () => () => {
+      // Invalidate queued animation frames and delayed scroll corrections.
+      scrollRequestIdRef.current += 1;
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!diffData) {
       const nextPaths = new Set<string>();
