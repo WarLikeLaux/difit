@@ -745,7 +745,7 @@ describe('App Component - Comment sync', () => {
       files: [
         {
           path: 'test.ts',
-          status: 'modified',
+          status: 'added',
           additions: 1,
           deletions: 0,
           chunks: [
