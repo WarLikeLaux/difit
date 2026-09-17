@@ -864,6 +864,7 @@ export function SideBySideDiffChunk({
                         >
                           <div className={`w-1/2`}>
                             <CommentForm
+                              draftKey={`new:${filename ?? 'unknown'}:${commentingLine.side}:${JSON.stringify(commentingLine.lineNumber)}`}
                               onSubmit={handleSubmitComment}
                               onCancel={handleCancelComment}
                               selectedCode={getSelectedCodeContent()}

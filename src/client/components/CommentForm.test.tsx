@@ -1,9 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommentForm } from './CommentForm';
 
 describe('CommentForm', () => {
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/reviews/review-one/');
+    window.sessionStorage.clear();
+  });
+
   it('marks the cancel action independently from other form buttons', () => {
     const onCancel = vi.fn();
     const { container } = render(
@@ -29,5 +34,16 @@ describe('CommentForm', () => {
 
     fireEvent.keyDown(textbox, { key: 'Enter' });
     expect(onSubmit).toHaveBeenCalledWith('First line');
+  });
+
+  it('restores an unfinished review-scoped draft after remounting', () => {
+    const first = render(
+      <CommentForm onSubmit={vi.fn()} onCancel={vi.fn()} draftKey="reply:thread-one" />,
+    );
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Keep this draft' } });
+    first.unmount();
+
+    render(<CommentForm onSubmit={vi.fn()} onCancel={vi.fn()} draftKey="reply:thread-one" />);
+    expect(screen.getByRole('textbox')).toHaveValue('Keep this draft');
   });
 });

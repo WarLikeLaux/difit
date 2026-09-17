@@ -41,6 +41,7 @@ import { GitHubIcon } from './components/GitHubIcon';
 import { HelpModal } from './components/HelpModal';
 import { Logo } from './components/Logo';
 import { ReloadButton } from './components/ReloadButton';
+import { ReviewSwitcher } from './components/ReviewSwitcher';
 import { RevisionDetailModal } from './components/RevisionDetailModal';
 import { SettingsModal } from './components/SettingsModal';
 import { SparkleAnimation } from './components/SparkleAnimation';
@@ -53,6 +54,11 @@ import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 import { useLazyDiffRendering } from './hooks/useLazyDiffRendering';
 import { useViewedFiles } from './hooks/useViewedFiles';
 import { useViewport } from './hooks/useViewport';
+import { useReviewRegistry, type ActiveReview } from './reviews/reviewRegistry';
+import {
+  readReviewWorkspaceState,
+  writeReviewWorkspaceState,
+} from './reviews/reviewWorkspaceState';
 import { fetchClientSettings, saveClientSettings } from './services/userSettings';
 import { hasMultipleCommentAuthors } from './utils/commentAuthors';
 import { getCommentStorageNamespace } from './utils/commentStorageNamespace';
@@ -157,11 +163,20 @@ const getInitialShowResolvedComments = () => {
 
 type MainView = 'diff' | 'comments';
 
-function App() {
+interface ReviewWorkspaceProps {
+  activeReviewId: string | null;
+  reviews: ActiveReview[];
+  onSelectReview: (reviewId: string) => void;
+}
+
+function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWorkspaceProps) {
+  const initialWorkspaceStateRef = useRef(readReviewWorkspaceState(activeReviewId));
   const [diffData, setDiffData] = useState<DiffResponse | null>(null);
   const diffDataRef = useRef<DiffResponse | null>(null);
   const [diffDataVersion, setDiffDataVersion] = useState(0);
-  const [diffMode, setDiffMode] = useState<DiffViewMode>(getInitialDiffViewMode);
+  const [diffMode, setDiffMode] = useState<DiffViewMode>(
+    () => initialWorkspaceStateRef.current.diffMode ?? getInitialDiffViewMode(),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(getInitialSidebarWidth);
@@ -171,18 +186,40 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [showSparkles, setShowSparkles] = useState(false);
   const [hasTriggeredSparkles, setHasTriggeredSparkles] = useState(false);
-  const [mainView, setMainView] = useState<MainView | null>(null);
+  const [mainView, setMainView] = useState<MainView | null>(
+    initialWorkspaceStateRef.current.mainView ?? null,
+  );
   const [pendingCommentThreadId, setPendingCommentThreadId] = useState<string | null>(null);
   const [codePreviewThreadId, setCodePreviewThreadId] = useState<string | null>(null);
   const [isCodePreviewCollapsed, setIsCodePreviewCollapsed] = useState(false);
   const codePreviewExpansionKeyRef = useRef<string | null>(null);
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
-  const [codeFilterText, setCodeFilterText] = useState('');
+  const [codeFilterText, setCodeFilterText] = useState(
+    initialWorkspaceStateRef.current.codeFilterText ?? '',
+  );
   const deferredCodeFilterText = useDeferredValue(codeFilterText);
   const collapsedInitializedRef = useRef(false);
   const diffScrollContainerRef = useRef<HTMLElement | null>(null);
+  const workspaceStateRef = useRef(initialWorkspaceStateRef.current);
+  workspaceStateRef.current = {
+    mainView: mainView ?? undefined,
+    diffMode,
+    codeFilterText,
+    diffScrollTop: diffScrollContainerRef.current?.scrollTop,
+  };
+  const pendingScrollRestoreRef = useRef(initialWorkspaceStateRef.current.diffScrollTop);
   diffDataRef.current = diffData;
+
+  useEffect(
+    () => () => {
+      writeReviewWorkspaceState(activeReviewId, {
+        ...workspaceStateRef.current,
+        diffScrollTop: diffScrollContainerRef.current?.scrollTop,
+      });
+    },
+    [activeReviewId],
+  );
 
   // Revision selector state
   const [revisionOptions, setRevisionOptions] = useState<RevisionsResponse | null>(null);
@@ -287,7 +324,9 @@ function App() {
   const hasBootstrappedComments =
     commentsContextKey !== null && commentsContextKey === bootstrappedCommentsKey;
   const bootstrappingCommentsKeyRef = useRef<string | null>(null);
-  const hasSelectedInitialMainViewRef = useRef(false);
+  const hasSelectedInitialMainViewRef = useRef(
+    initialWorkspaceStateRef.current.mainView !== undefined,
+  );
   const selectMainView = useCallback((view: MainView) => {
     hasSelectedInitialMainViewRef.current = true;
     setMainView(view);
@@ -1020,6 +1059,23 @@ function App() {
   }, [fetchDiffData]);
 
   useEffect(() => {
+    const scrollTop = pendingScrollRestoreRef.current;
+    if (scrollTop === undefined || mainView !== 'diff' || !diffData) return;
+
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        diffScrollContainerRef.current?.scrollTo({ top: scrollTop });
+        pendingScrollRestoreRef.current = undefined;
+      });
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+    };
+  }, [diffData, mainView]);
+
+  useEffect(() => {
     return () => {
       activeDiffAbortControllerRef.current?.abort();
     };
@@ -1045,9 +1101,9 @@ function App() {
       const seed: Record<string, unknown> = {};
 
       const remoteDiffViewMode = parseDiffViewMode(client.diffViewMode);
-      if (remoteDiffViewMode) {
+      if (remoteDiffViewMode && !initialWorkspaceStateRef.current.diffMode) {
         setDiffMode(remoteDiffViewMode);
-      } else {
+      } else if (!remoteDiffViewMode) {
         const localDiffViewMode = getStoredDiffViewMode();
         if (localDiffViewMode) {
           seed.diffViewMode = localDiffViewMode;
@@ -1480,28 +1536,48 @@ function App() {
     });
   };
 
+  const reviewSwitcher = activeReviewId ? (
+    <ReviewSwitcher
+      activeReviewId={activeReviewId}
+      reviews={reviews}
+      sidebarWidth={sidebarWidth}
+      sidebarOpen={isFileTreeOpen}
+      isMobile={isMobile}
+      onSelectReview={onSelectReview}
+    />
+  ) : null;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-github-bg-primary">
-        <div className="text-github-text-secondary text-base">Loading diff...</div>
+      <div className="flex h-screen flex-col bg-github-bg-primary">
+        {reviewSwitcher}
+        <div className="flex flex-1 items-center justify-center text-base text-github-text-secondary">
+          Loading diff...
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-github-bg-primary text-center gap-2">
-        <h2 className="text-github-danger text-2xl mb-2">Error</h2>
-        <p className="text-github-text-secondary text-base">{error}</p>
+      <div className="flex h-screen flex-col bg-github-bg-primary">
+        {reviewSwitcher}
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+          <h2 className="mb-2 text-2xl text-github-danger">Error</h2>
+          <p className="text-base text-github-text-secondary">{error}</p>
+        </div>
       </div>
     );
   }
 
   if (!diffData) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-github-bg-primary text-center gap-2">
-        <h2 className="text-github-danger text-2xl mb-2">No data</h2>
-        <p className="text-github-text-secondary text-base">No diff data available</p>
+      <div className="flex h-screen flex-col bg-github-bg-primary">
+        {reviewSwitcher}
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+          <h2 className="mb-2 text-2xl text-github-danger">No data</h2>
+          <p className="text-base text-github-text-secondary">No diff data available</p>
+        </div>
       </div>
     );
   }
@@ -1756,6 +1832,7 @@ function App() {
             </div>
           </div>
         </header>
+        {reviewSwitcher}
         {diffData.reviewStale && (
           <div
             role="alert"
@@ -2057,6 +2134,19 @@ function App() {
         <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
       </div>
     </WordHighlightProvider>
+  );
+}
+
+function App() {
+  const { activeReviewId, reviews, selectReview } = useReviewRegistry();
+
+  return (
+    <ReviewWorkspace
+      key={activeReviewId ?? 'direct-viewer'}
+      activeReviewId={activeReviewId}
+      reviews={reviews}
+      onSelectReview={selectReview}
+    />
   );
 }
 
