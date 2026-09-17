@@ -43,7 +43,7 @@ export class DifitReviewApi {
       ...result,
       threads: includeResolved
         ? (result.threads ?? [])
-        : (result.threads ?? []).filter((thread) => !thread.resolvedAt),
+        : (result.threads ?? []).filter((thread) => !thread.closedAt && !thread.resolvedAt),
     };
   }
 

@@ -29,6 +29,7 @@ vi.mock('./hooks/useDiffComments', () => ({
     addThread: vi.fn(),
     removeComment: vi.fn(),
     removeThread: vi.fn(),
+    setThreadStatus: mockSetThreadStatus,
     removeMessage: vi.fn(),
     replyToThread: vi.fn(),
     updateComment: vi.fn(),
@@ -122,6 +123,7 @@ Object.defineProperty(window, 'EventSource', {
 
 let mockComments: DiffCommentThread[] = [];
 const mockReplaceThreads = vi.fn();
+const mockSetThreadStatus = vi.fn();
 const mockClearAllComments = vi.fn();
 const mockApplyCommentImports = vi.fn(() => []);
 const mockGenerateAllCommentsPrompt = vi.fn(() => 'formatted prompt');
@@ -174,6 +176,7 @@ beforeEach(() => {
   mockViewedFiles = new Set<string>();
   mockHasLoadedInitialViewedFiles = true;
   mockReplaceThreads.mockReset();
+  mockSetThreadStatus.mockReset();
   mockGenerateAllCommentsPrompt.mockClear();
 });
 
@@ -624,6 +627,29 @@ describe('App Component - Comment sync', () => {
     );
   });
 
+  it('persists a status transition immediately so review switching cannot drop it', async () => {
+    mockComments = [
+      createMockThread({ id: 'test-1', filePath: 'test.ts', line: 10, body: 'Question' }),
+    ];
+    mockFetch(mockDiffResponse);
+
+    renderApp();
+    await screen.findByRole('heading', { name: 'Comments' });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(mockSetThreadStatus).toHaveBeenCalledWith('test-1', 'closed');
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/comments/test-1/status'),
+        expect.objectContaining({
+          method: 'PATCH',
+          keepalive: true,
+          body: JSON.stringify({ status: 'closed' }),
+        }),
+      ),
+    );
+  });
+
   it('opens the comments view by default when a non-open unresolved thread exists', async () => {
     mockComments = [
       {
@@ -900,7 +926,7 @@ describe('App Component - Comment sync', () => {
     renderApp();
 
     const showResolved = await screen.findByRole('button', {
-      name: 'Show resolved comments (1)',
+      name: 'Show closed comments (1)',
     });
     expect(document.getElementById('comment-thread-resolved-thread')).not.toBeInTheDocument();
 

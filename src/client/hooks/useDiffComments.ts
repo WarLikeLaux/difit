@@ -70,6 +70,7 @@ function normalizeThread(thread: DiffCommentThread): CommentThread {
     changesRequestedAt: thread.changesRequestedAt,
     toVerifyAt: thread.toVerifyAt,
     readyAt: thread.readyAt,
+    closedAt: thread.closedAt,
     resolvedAt: thread.resolvedAt,
     codeContent: thread.codeSnapshot?.content,
     messages: thread.messages,
@@ -251,6 +252,7 @@ export function useDiffComments(
               changesRequestedAt: undefined,
               toVerifyAt: undefined,
               readyAt: undefined,
+              closedAt: undefined,
               resolvedAt: undefined,
               messages: [
                 ...thread.messages,
@@ -282,6 +284,7 @@ export function useDiffComments(
               changesRequestedAt: undefined,
               toVerifyAt: undefined,
               readyAt: undefined,
+              closedAt: undefined,
               resolvedAt: now,
             }
           : thread,
@@ -304,6 +307,7 @@ export function useDiffComments(
           changesRequestedAt: status === 'changes_requested' ? now : undefined,
           toVerifyAt: status === 'to_verify' ? now : undefined,
           readyAt: status === 'ready' ? now : undefined,
+          closedAt: status === 'closed' ? now : undefined,
           resolvedAt: status === 'resolved' ? now : undefined,
         };
       });
@@ -495,7 +499,7 @@ export function useDiffComments(
   const generateAllCommentsPrompt = useCallback(
     (context?: CommentPromptDiffContext): string => {
       return formatAllCommentThreadsPrompt(
-        threads.filter((thread) => !thread.resolvedAt).map(normalizeThread),
+        threads.filter((thread) => !thread.closedAt && !thread.resolvedAt).map(normalizeThread),
         context,
       );
     },

@@ -768,6 +768,7 @@ export async function startServer(options: ServerOptions): Promise<{
       changesRequestedAt: thread.changesRequestedAt,
       toVerifyAt: thread.toVerifyAt,
       readyAt: thread.readyAt,
+      closedAt: thread.closedAt,
       resolvedAt: thread.resolvedAt,
       codeContent: thread.codeSnapshot?.content,
       messages: thread.messages,
@@ -817,6 +818,7 @@ export async function startServer(options: ServerOptions): Promise<{
       changesRequestedAt: thread.changesRequestedAt,
       toVerifyAt: thread.toVerifyAt,
       readyAt: thread.readyAt,
+      closedAt: thread.closedAt,
       resolvedAt: thread.resolvedAt,
       position: {
         side: thread.side ?? 'new',
@@ -1064,6 +1066,7 @@ export async function startServer(options: ServerOptions): Promise<{
             changesRequestedAt: undefined,
             toVerifyAt: undefined,
             readyAt: undefined,
+            closedAt: undefined,
             resolvedAt: now,
           }
         : thread,
@@ -1089,6 +1092,7 @@ export async function startServer(options: ServerOptions): Promise<{
       status !== 'changes_requested' &&
       status !== 'to_verify' &&
       status !== 'ready' &&
+      status !== 'closed' &&
       status !== 'resolved'
     ) {
       res.status(400).json({ error: 'Invalid thread status' });
@@ -1111,6 +1115,7 @@ export async function startServer(options: ServerOptions): Promise<{
             changesRequestedAt: status === 'changes_requested' ? now : undefined,
             toVerifyAt: status === 'to_verify' ? now : undefined,
             readyAt: status === 'ready' ? now : undefined,
+            closedAt: status === 'closed' ? now : undefined,
             resolvedAt: status === 'resolved' ? now : undefined,
           }
         : thread,
@@ -1157,7 +1162,9 @@ export async function startServer(options: ServerOptions): Promise<{
     const session = getOrCreateCommentSession(selection);
     res.type('text/plain');
 
-    const unresolvedThreads = session.threads.filter((thread) => !thread.resolvedAt);
+    const unresolvedThreads = session.threads.filter(
+      (thread) => !thread.closedAt && !thread.resolvedAt,
+    );
     if (unresolvedThreads.length > 0) {
       const output = formatCommentsOutput(unresolvedThreads.map(toCommentThread));
       res.send(output);
@@ -1306,7 +1313,9 @@ export async function startServer(options: ServerOptions): Promise<{
   // Function to output comments when server shuts down
   function outputFinalComments() {
     const session = getOrCreateCommentSession(currentCommentSelection);
-    const unresolvedThreads = session.threads.filter((thread) => !thread.resolvedAt);
+    const unresolvedThreads = session.threads.filter(
+      (thread) => !thread.closedAt && !thread.resolvedAt,
+    );
     if (unresolvedThreads.length > 0) {
       console.log(formatCommentsOutput(unresolvedThreads.map(toCommentThread)));
     }

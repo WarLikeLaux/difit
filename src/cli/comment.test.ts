@@ -228,7 +228,11 @@ describe('comment subcommand integration', () => {
     it('fetches comments in json format', async () => {
       mockFetch.mockResolvedValue(
         jsonResponse({
-          threads: [{ id: 'open' }, { id: 'resolved', resolvedAt: '2026-09-11T00:00:00.000Z' }],
+          threads: [
+            { id: 'open' },
+            { id: 'closed', closedAt: '2026-09-11T00:00:00.000Z' },
+            { id: 'resolved', resolvedAt: '2026-09-11T00:01:00.000Z' },
+          ],
         }),
       );
 

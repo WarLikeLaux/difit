@@ -38,6 +38,26 @@ const mockThread: CommentThread = {
 };
 
 describe('CommentThreadCard', () => {
+  it('closes an open discussion without marking it resolved', async () => {
+    const user = userEvent.setup();
+    const onThreadStatusChange = vi.fn();
+
+    render(
+      <CommentThreadCard
+        thread={mockThread}
+        onGeneratePrompt={() => 'thread prompt'}
+        onRemoveThread={vi.fn()}
+        onThreadStatusChange={onThreadStatusChange}
+        onReplyToThread={vi.fn().mockResolvedValue(undefined)}
+        onRemoveMessage={vi.fn()}
+        onUpdateMessage={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onThreadStatusChange).toHaveBeenCalledWith('closed');
+  });
+
   it('shows missing authors as Agent when author badges are enabled', () => {
     render(
       <CommentThreadCard

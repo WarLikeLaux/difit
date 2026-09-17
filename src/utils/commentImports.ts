@@ -334,6 +334,7 @@ function cloneThread(thread: DiffCommentThread): DiffCommentThread {
     changesRequestedAt: thread.changesRequestedAt,
     toVerifyAt: thread.toVerifyAt,
     readyAt: thread.readyAt,
+    closedAt: thread.closedAt,
     resolvedAt: thread.resolvedAt,
     position: clonePosition(thread.position),
     codeSnapshot: cloneCodeSnapshot(thread.codeSnapshot),
@@ -432,6 +433,7 @@ function mergeThread(
       : (incomingThread.changesRequestedAt ?? existingThread.changesRequestedAt),
     toVerifyAt: hasNewReply ? undefined : (incomingThread.toVerifyAt ?? existingThread.toVerifyAt),
     readyAt: hasNewReply ? undefined : (incomingThread.readyAt ?? existingThread.readyAt),
+    closedAt: hasNewReply ? undefined : (incomingThread.closedAt ?? existingThread.closedAt),
     resolvedAt: hasNewReply ? undefined : (incomingThread.resolvedAt ?? existingThread.resolvedAt),
     position: clonePosition(existingThread.position),
     codeSnapshot: cloneCodeSnapshot(incomingThread.codeSnapshot ?? existingThread.codeSnapshot),
@@ -543,6 +545,7 @@ export function mergeCommentImports(
     targetThread.changesRequestedAt = undefined;
     targetThread.toVerifyAt = undefined;
     targetThread.readyAt = undefined;
+    targetThread.closedAt = undefined;
     targetThread.resolvedAt = undefined;
   }
 
