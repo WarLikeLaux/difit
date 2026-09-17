@@ -8,7 +8,7 @@
 
 # Difit maintained fork
 
-This is a maintained fork of [yoshiko-pg/difit](https://github.com/yoshiko-pg/difit), built for persistent local reviews shared between a browser and coding agents. It keeps difit’s GitHub-style diff viewer and adds a review hub, durable feedback delivery, a Codex plugin, and an MCP server.
+This is a maintained fork of [yoshiko-pg/difit](https://github.com/yoshiko-pg/difit), built for persistent local reviews shared between a browser and coding agents. It keeps difit’s GitHub-style diff viewer and adds a multi-review workspace, durable feedback delivery, a Codex plugin, and an MCP server.
 
 Read the [upstream README](https://github.com/yoshiko-pg/difit#readme) for the full product overview, supported diff formats, keyboard shortcuts, and standard CLI usage. This README covers the fork-specific behavior and setup.
 
@@ -17,12 +17,15 @@ Read the [upstream README](https://github.com/yoshiko-pg/difit#readme) for the f
 | Area              | Fork behavior                                                                                        | Practical effect                                                                                             |
 | ----------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Review hub        | `difit hub` serves reviews from multiple repositories on one origin                                  | Old and current reviews remain easy to find without tracking viewer ports                                    |
+| Review switcher   | Running reviews appear as in-page tabs with unread counters and per-review workspace state           | Move between repositories without a full page reload or losing the current view, filter, scroll, or draft    |
 | Offline reviews   | The hub stores the last rendered diff, comments, and review state                                    | A review stays readable when its viewer stops or the checkout changes branch                                 |
+| Live diffs        | Working-tree reviews watch tracked changes and newly created untracked files when enabled            | Agent edits appear automatically without restarting the viewer                                               |
 | Agent inbox       | User replies plus `Assign Agent` and `Verify Fix` transitions enter a durable, acknowledged queue    | Feedback and requested actions reach the agent attached to that exact review and survive restarts            |
 | Review identity   | Repository, branch, and diff base are part of the review identity                                    | Comments from an old branch are not delivered to an unrelated working tree                                   |
 | Agent integration | One Codex plugin contains the `difit` skill and a stdio MCP server                                   | Agents can open reviews, read events, reply, edit comments, and update thread status through one integration |
-| Review workflow   | Threads branch from `Open` into `Assign Agent` or `Changes Requested` before verification            | Agent work goes to `Ready`; external fixes pass through `Verify Fix`, then `Ready` and `Resolved`            |
-| GitLab            | The CLI detects merge requests and adds file and line links                                          | A local review can jump back to the matching GitLab MR context                                               |
+| Review workflow   | Threads branch from `Open` into agent work, an external-fix path, or `Closed`                        | Actionable work reaches `Ready` and `Resolved`; questions can be closed without pretending they were fixed   |
+| Comment workspace | Status filters, collapsed replies, inline full-file code preview, and hidden closed threads          | Large review conversations stay navigable without expanding the main diff                                    |
+| GitLab            | Live MR reviews retain their MR context and add file and line links                                  | Agent edits stay visible while comments can jump back to the matching GitLab location                        |
 | Security          | Hub and viewer requests require authentication and enforce host, origin, content, and Git boundaries | Loopback is not treated as a security boundary by itself                                                     |
 
 The separate `difit-review` skill was intentionally removed. The maintained skill lives at [`plugins/difit/skills/difit`](plugins/difit/skills/difit), with [`skills/difit`](skills/difit) kept as a repository-local compatibility link.
@@ -81,9 +84,29 @@ Then start a review from the repository being reviewed:
 difit . --include-untracked --background
 ```
 
-The review appears in the hub. A working-tree review follows its original branch while connected. If that checkout moves to another branch, the stored review becomes read-only until a viewer reconnects with the same review identity. Comments added while it is offline remain queued.
+The review appears in the hub. A working-tree review follows its original branch while connected and refreshes automatically after filesystem changes. With `--include-untracked`, files created after startup are included as well. If that checkout moves to another branch, the stored review becomes read-only until a viewer reconnects with the same review identity. Comments added while it is offline remain queued.
 
 Deleting a review from the dashboard permanently removes that review’s snapshot, comments, and pending events.
+
+## Review workspace
+
+Review pages behind the hub show the running reviews as tabs. Switching tabs updates the URL and review data without reloading the whole page. The selected main view, split or unified layout, code filter, diff scroll position, and unfinished comment drafts are kept separately for each review during the browser session. The first four reviews stay visible; additional reviews are available from the `More` menu.
+
+The diff refreshes automatically when the attached working tree changes. Refreshes are debounced and serialized, so a burst of writes results in the latest diff instead of overlapping reloads. The manual refresh control remains available if the watcher disconnects or parsing fails.
+
+Closed and resolved threads are hidden from the main diff by default and can be restored with the `Closed` toggle. The Comments view provides filters for every workflow state plus controls for collapsing threads or hiding replies. `Show code` opens the complete changed file in a modal, highlights the commented line, and scrolls it into view; `Go to code` navigates to the same location in the main diff.
+
+The reviewer chooses the workflow from `Open`:
+
+- agent fix: `Open` → `Assign Agent` → `Ready` → `Resolved`;
+- external fix: `Open` → `Changes Requested` → `Verify Fix` → `Ready` → `Resolved`;
+- no code change required: `Open` → `Closed`.
+
+For a live GitLab merge request, run the viewer from the MR source branch and keep `.` as the target so later staged, unstaged, and untracked agent edits stay visible:
+
+```sh
+difit . <target-branch> --include-untracked --gitlab-mr <merge-request-url> --background
+```
 
 ## Codex plugin and MCP
 
@@ -108,7 +131,9 @@ The `difit` executable must therefore be available on the MCP server’s `PATH`.
 
 MCP and CLI commands talk to the same authenticated local API. The CLI remains the fallback when the plugin is unavailable.
 
-In HAPI, start the viewer from the agent session’s shell so it inherits the current session identity. The viewer can then wake that session when feedback arrives. MCP handles later review operations; it should not start the HAPI-bound viewer from a long-lived process that lacks the current session context.
+In HAPI, start the viewer with `--background` from the agent session’s shell so it inherits the current session identity. The viewer can then wake that session when feedback arrives. MCP handles later review operations; it should not start the HAPI-bound viewer from a long-lived process that lacks the current session context.
+
+When reconnecting or restarting an existing review, run the canonical command again without its original `--comment` arguments. Persisted threads are restored from the review identity; replaying startup comments without stable IDs creates duplicate `Open` threads.
 
 ## CLI additions
 
@@ -118,9 +143,15 @@ The upstream diff targets still work. This fork adds the following entry points:
 difit hub --host 127.0.0.1 --port 4965 --public-origin https://difit.local
 difit mcp
 difit review context --port <viewer-port>
+difit auth key
 difit comment events --port <viewer-port>
 difit comment ack <through-seq> --port <viewer-port>
 difit comment watch --port <viewer-port> --cursor-file <path>
+difit comment accept <thread-id> --port <viewer-port>
+difit comment request-changes <thread-id> --port <viewer-port>
+difit comment verify <thread-id> --port <viewer-port>
+difit comment ready <thread-id> --port <viewer-port>
+difit comment reopen <thread-id> --port <viewer-port>
 ```
 
 The MCP server exposes the same review lifecycle: start or discover a review, inspect context and threads, receive and acknowledge events, create or edit messages, and change agent-owned thread states.
