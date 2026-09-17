@@ -319,6 +319,7 @@ program
         clearComments: options.clean,
         keepAlive: options.keepAlive,
         contextLines: options.context,
+        includeUntracked: options.includeUntracked,
         diffMode: determineDiffMode(selection, compareWith),
         repoPath,
         reviewUrl,

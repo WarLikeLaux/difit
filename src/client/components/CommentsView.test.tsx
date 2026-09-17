@@ -173,7 +173,7 @@ describe('CommentsView', () => {
       { wrapper },
     );
 
-    expect(screen.getByRole('button', { name: 'Ready for review (1)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Ready (1)' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -222,7 +222,7 @@ describe('CommentsView', () => {
       { wrapper },
     );
 
-    await user.click(screen.getByRole('button', { name: 'Accepted' }));
+    await user.click(screen.getByRole('button', { name: 'Assign Agent' }));
     const acceptedThread = {
       ...mockThreads[0]!,
       acceptedAt: '2026-09-11T00:00:00.000Z',
@@ -239,11 +239,55 @@ describe('CommentsView', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Accepted (1)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Agent Working (1)' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
     expect(screen.getByText('First root comment')).toBeInTheDocument();
+  });
+
+  it('follows the external-fix branch from request changes to verify fix', async () => {
+    const user = userEvent.setup();
+    const onThreadStatusChange = vi.fn();
+    const view = render(
+      <CommentsView
+        comments={[mockThreads[0]!]}
+        onRemoveThread={mockRemoveThread}
+        onThreadStatusChange={onThreadStatusChange}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+      { wrapper },
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Request Changes' }));
+    expect(onThreadStatusChange).toHaveBeenLastCalledWith('thread-1', 'changes_requested');
+
+    view.rerender(
+      <CommentsView
+        comments={[
+          {
+            ...mockThreads[0]!,
+            changesRequestedAt: '2026-09-11T00:00:00.000Z',
+          },
+        ]}
+        onRemoveThread={mockRemoveThread}
+        onThreadStatusChange={onThreadStatusChange}
+        onGenerateThreadPrompt={mockGenerateThreadPrompt}
+        onReplyToThread={mockReplyToThread}
+        onRemoveMessage={mockRemoveMessage}
+        onUpdateMessage={mockUpdateMessage}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Changes Requested (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await user.click(screen.getByRole('button', { name: 'Verify Fix' }));
+    expect(onThreadStatusChange).toHaveBeenLastCalledWith('thread-1', 'to_verify');
   });
 
   it('follows a thread moved to a later status by an external update', () => {
@@ -279,7 +323,7 @@ describe('CommentsView', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Ready for review (1)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Ready (1)' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -320,7 +364,7 @@ describe('CommentsView', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Ready for review (1)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Ready (1)' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -377,7 +421,7 @@ describe('CommentsView', () => {
 
     expect(screen.getByText('First root comment')).toBeInTheDocument();
     expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Accepted (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Agent Working (1)' }));
     expect(screen.getByText('Second root comment')).toBeInTheDocument();
   });
 
@@ -413,13 +457,13 @@ describe('CommentsView', () => {
     );
 
     expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Verify by agent (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Verify Fix (1)' }));
     expect(screen.getByText('Second root comment')).toBeInTheDocument();
-    expect(screen.getByLabelText('Verify by agent thread')).toBeInTheDocument();
+    expect(screen.getByLabelText('Verify Fix thread')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Ready for review (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Ready (1)' }));
     expect(screen.getByText('Third root comment')).toBeInTheDocument();
-    expect(screen.getByLabelText('Ready for review thread')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ready thread')).toBeInTheDocument();
   });
 
   it('provides thread workflow, navigation, deletion, and reply visibility controls', async () => {
@@ -444,8 +488,11 @@ describe('CommentsView', () => {
       { wrapper },
     );
 
-    await user.click(screen.getByRole('button', { name: 'Accepted' }));
+    await user.click(screen.getByRole('button', { name: 'Assign Agent' }));
     expect(onThreadStatusChange).toHaveBeenCalledWith('thread-1', 'accepted');
+
+    await user.click(screen.getByRole('button', { name: 'Request Changes' }));
+    expect(onThreadStatusChange).toHaveBeenCalledWith('thread-1', 'changes_requested');
 
     await user.click(screen.getByRole('button', { name: 'Go to Code' }));
     expect(onNavigateToCode).toHaveBeenCalledWith(mockThreads[0]);

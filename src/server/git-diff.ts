@@ -16,15 +16,33 @@ import { isGeneratedFile } from './generated-file-check.js';
 export class GitDiffParser {
   private git: SimpleGit;
   private repoPath: string;
+  private readonly includeUntracked: boolean;
+  private includeUntrackedQueue = Promise.resolve();
   private readonly resolvedCommitCache = new Map<string, { value: string; expiresAt: number }>();
   private static readonly RESOLVED_COMMIT_CACHE_TTL_MS = 5_000;
   private static readonly GENERATED_HEADER_SCAN_BYTES = 4 * 1024;
   private static readonly GITATTRIBUTES_CHECK_CHUNK_SIZE = 200;
   private static readonly MAX_DISPLAY_BLOB_BYTES = 10 * 1024 * 1024;
 
-  constructor(repoPath = process.cwd()) {
+  constructor(repoPath = process.cwd(), includeUntracked = false) {
     this.repoPath = repoPath;
     this.git = simpleGit(repoPath);
+    this.includeUntracked = includeUntracked;
+  }
+
+  private async markNewUntrackedFilesIntentToAdd(targetCommitish: string): Promise<void> {
+    if (!this.includeUntracked || (targetCommitish !== '.' && targetCommitish !== 'working')) {
+      return;
+    }
+
+    const operation = this.includeUntrackedQueue.then(async () => {
+      const status = await this.git.status();
+      if (status.not_added.length > 0) {
+        await this.git.add(['--intent-to-add', ...status.not_added]);
+      }
+    });
+    this.includeUntrackedQueue = operation.catch(() => undefined);
+    await operation;
   }
 
   private normalizeRepositoryRelativePath(filepath: string): string {
@@ -72,6 +90,8 @@ export class GitDiffParser {
       if (!validation.valid) {
         throw new Error(validation.error);
       }
+
+      await this.markNewUntrackedFilesIntentToAdd(targetCommitish);
 
       const effectiveBaseCommitish = await this.resolveBaseCommitish(selection);
       let resolvedCommit: string;

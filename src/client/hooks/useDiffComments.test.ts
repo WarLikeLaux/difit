@@ -502,7 +502,7 @@ const next = true;
       expect(result.current.threads[0]?.messages[1]?.body).toBe('Reply comment');
     });
 
-    it('supports the accepted, to-verify, and ready workflow statuses', () => {
+    it('supports the agent and external-fix workflow statuses', () => {
       const { result } = renderHook(() => useDiffComments('main', 'feature-branch', 'abc123'));
       let threadId = '';
 
@@ -518,19 +518,29 @@ const next = true;
       act(() => result.current.setThreadStatus(threadId, 'accepted'));
 
       expect(result.current.threads[0]?.acceptedAt).toEqual(expect.any(String));
+      expect(result.current.threads[0]?.changesRequestedAt).toBeUndefined();
       expect(result.current.threads[0]?.toVerifyAt).toBeUndefined();
       expect(result.current.threads[0]?.readyAt).toBeUndefined();
       expect(result.current.threads[0]?.resolvedAt).toBeUndefined();
 
+      act(() => result.current.setThreadStatus(threadId, 'changes_requested'));
+
+      expect(result.current.threads[0]?.acceptedAt).toBeUndefined();
+      expect(result.current.threads[0]?.changesRequestedAt).toEqual(expect.any(String));
+      expect(result.current.threads[0]?.toVerifyAt).toBeUndefined();
+      expect(result.current.threads[0]?.readyAt).toBeUndefined();
+
       act(() => result.current.setThreadStatus(threadId, 'to_verify'));
 
       expect(result.current.threads[0]?.acceptedAt).toBeUndefined();
+      expect(result.current.threads[0]?.changesRequestedAt).toBeUndefined();
       expect(result.current.threads[0]?.toVerifyAt).toEqual(expect.any(String));
       expect(result.current.threads[0]?.readyAt).toBeUndefined();
 
       act(() => result.current.setThreadStatus(threadId, 'ready'));
 
       expect(result.current.threads[0]?.acceptedAt).toBeUndefined();
+      expect(result.current.threads[0]?.changesRequestedAt).toBeUndefined();
       expect(result.current.threads[0]?.toVerifyAt).toBeUndefined();
       expect(result.current.threads[0]?.readyAt).toEqual(expect.any(String));
       expect(result.current.threads[0]?.resolvedAt).toBeUndefined();

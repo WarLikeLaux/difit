@@ -11,6 +11,8 @@ vi.mock('simple-git', () => ({
     revparse: vi.fn(),
     diff: vi.fn(),
     raw: vi.fn(),
+    status: vi.fn(),
+    add: vi.fn(),
   })),
 }));
 
@@ -1468,6 +1470,39 @@ index abc123..def456 100644
   });
 
   describe('parseDiff', () => {
+    it('includes untracked files created after startup when enabled', async () => {
+      parser = new GitDiffParser(TEST_REPO_PATH, true);
+      const gitStatus = (parser as any).git.status;
+      const gitAdd = (parser as any).git.add;
+      const gitDiff = (parser as any).git.diff;
+      const gitRevparse = (parser as any).git.revparse;
+
+      gitStatus.mockResolvedValue({ not_added: ['tests/new-test.ts'] });
+      gitRevparse.mockResolvedValue('1234567890abcdef1234567890abcdef12345678');
+      gitDiff.mockResolvedValue('');
+
+      await parser.parseDiff({ targetCommitish: '.', baseCommitish: 'HEAD' });
+
+      expect(gitStatus).toHaveBeenCalledOnce();
+      expect(gitAdd).toHaveBeenCalledWith(['--intent-to-add', 'tests/new-test.ts']);
+      expect(gitAdd.mock.invocationCallOrder[0]).toBeLessThan(gitDiff.mock.invocationCallOrder[0]!);
+    });
+
+    it('does not mutate untracked files when live inclusion is disabled', async () => {
+      const gitStatus = (parser as any).git.status;
+      const gitAdd = (parser as any).git.add;
+      const gitDiff = (parser as any).git.diff;
+      const gitRevparse = (parser as any).git.revparse;
+
+      gitRevparse.mockResolvedValue('1234567890abcdef1234567890abcdef12345678');
+      gitDiff.mockResolvedValue('');
+
+      await parser.parseDiff({ targetCommitish: '.', baseCommitish: 'HEAD' });
+
+      expect(gitStatus).not.toHaveBeenCalled();
+      expect(gitAdd).not.toHaveBeenCalled();
+    });
+
     it('marks files with .gitattributes linguist-generated=true as generated', async () => {
       const file = 'apps/app/web/src/api/index.tsx';
       const gitDiff = (parser as any).git.diff;

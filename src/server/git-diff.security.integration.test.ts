@@ -10,7 +10,7 @@ import { createDiffSelection } from '../utils/diffSelection.js';
 
 import { GitDiffParser } from './git-diff.js';
 
-describe('passive Git diff security', () => {
+describe('Git diff integration', () => {
   let root: string | undefined;
 
   afterEach(async () => {
@@ -45,5 +45,34 @@ describe('passive Git diff security', () => {
 
     expect(result.files).toHaveLength(1);
     await expect(fs.access(markerPath)).rejects.toThrow();
+  });
+
+  it('discovers untracked files created after the parser starts when enabled', async () => {
+    root = await fs.mkdtemp(join(tmpdir(), 'difit-live-untracked-'));
+    const repositoryPath = join(root, 'repo');
+    await fs.mkdir(repositoryPath);
+
+    const git = simpleGit(repositoryPath);
+    await git.init();
+    await git.addConfig('user.email', 'integration-test@example.invalid');
+    await git.addConfig('user.name', 'Integration Test');
+    await fs.writeFile(join(repositoryPath, 'README.md'), '# Test\n');
+    await git.add('.');
+    await git.commit('initial');
+
+    const parser = new GitDiffParser(repositoryPath, true);
+    const initial = await parser.parseDiff(createDiffSelection('HEAD', '.'));
+    expect(initial.files).toHaveLength(0);
+
+    await fs.mkdir(join(repositoryPath, 'tests'));
+    await fs.writeFile(
+      join(repositoryPath, 'tests', 'new-test.ts'),
+      'export const works = true;\n',
+    );
+
+    const refreshed = await parser.parseDiff(createDiffSelection('HEAD', '.'));
+
+    expect(refreshed.files.map((file) => file.path)).toEqual(['tests/new-test.ts']);
+    expect(refreshed.files[0]?.additions).toBe(1);
   });
 });

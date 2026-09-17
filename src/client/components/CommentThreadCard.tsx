@@ -229,6 +229,47 @@ interface CommentThreadCardProps {
   syntaxTheme?: AppearanceSettings['syntaxTheme'];
 }
 
+interface ThreadStatusAction {
+  status: CommentThreadStatus;
+  label: string;
+}
+
+const THREAD_STATUS_ACTIONS: Record<CommentThreadStatus, readonly ThreadStatusAction[]> = {
+  open: [
+    { status: 'accepted', label: 'Assign Agent' },
+    { status: 'changes_requested', label: 'Request Changes' },
+  ],
+  accepted: [{ status: 'open', label: 'Reopen' }],
+  changes_requested: [
+    { status: 'to_verify', label: 'Verify Fix' },
+    { status: 'open', label: 'Reopen' },
+  ],
+  to_verify: [{ status: 'open', label: 'Reopen' }],
+  ready: [
+    { status: 'resolved', label: 'Resolve' },
+    { status: 'open', label: 'Reopen' },
+  ],
+  resolved: [{ status: 'open', label: 'Reopen' }],
+};
+
+const THREAD_STATUS_ACCENT_CLASSES: Record<CommentThreadStatus, string> = {
+  open: 'border-yellow-600/50 border-l-yellow-400',
+  accepted: 'border-blue-600/50 border-l-blue-400',
+  changes_requested: 'border-orange-600/50 border-l-orange-400',
+  to_verify: 'border-purple-600/50 border-l-purple-400',
+  ready: 'border-green-600/50 border-l-green-400',
+  resolved: 'border-github-border border-l-github-text-muted opacity-75',
+};
+
+const THREAD_STATUS_BADGE_CLASSES: Record<CommentThreadStatus, string> = {
+  open: 'border-yellow-500/60 text-yellow-400',
+  accepted: 'border-blue-500/60 text-blue-400',
+  changes_requested: 'border-orange-500/60 text-orange-400',
+  to_verify: 'border-purple-500/60 text-purple-400',
+  ready: 'border-green-500/60 text-green-400',
+  resolved: 'border-github-text-muted text-github-text-muted',
+};
+
 export function CommentThreadCard({
   thread,
   showAuthorBadges = false,
@@ -262,9 +303,11 @@ export function CommentThreadCard({
       ? 'ready'
       : thread.toVerifyAt
         ? 'to_verify'
-        : thread.acceptedAt
-          ? 'accepted'
-          : 'open';
+        : thread.changesRequestedAt
+          ? 'changes_requested'
+          : thread.acceptedAt
+            ? 'accepted'
+            : 'open';
   const repliesHidden = repliesHiddenOverride ?? hideReplies;
 
   useEffect(() => {
@@ -344,17 +387,7 @@ export function CommentThreadCard({
   return (
     <div
       id={`comment-thread-${thread.id}`}
-      className={`rounded-md border border-l-4 bg-github-bg-tertiary p-3 shadow-sm transition-all ${
-        thread.resolvedAt
-          ? 'border-github-border border-l-github-text-muted opacity-75'
-          : thread.readyAt
-            ? 'border-green-600/50 border-l-green-400'
-            : thread.toVerifyAt
-              ? 'border-purple-600/50 border-l-purple-400'
-              : thread.acceptedAt
-                ? 'border-blue-600/50 border-l-blue-400'
-                : 'border-yellow-600/50 border-l-yellow-400'
-      } ${onClick ? 'cursor-pointer hover:shadow-md' : ''}`}
+      className={`rounded-md border border-l-4 bg-github-bg-tertiary p-3 shadow-sm transition-all ${THREAD_STATUS_ACCENT_CLASSES[threadStatus]} ${onClick ? 'cursor-pointer hover:shadow-md' : ''}`}
       onClick={onClick}
     >
       <div className={isCollapsed ? '' : 'mb-3'}>
@@ -398,36 +431,12 @@ export function CommentThreadCard({
                 Not in diff
               </span>
             )}
-            {thread.resolvedAt && (
+            {threadStatus !== 'open' && (
               <span
-                className="inline-flex h-5 shrink-0 items-center rounded-full border border-github-text-muted px-2 text-[10px] font-medium text-github-text-muted"
-                aria-label="Resolved thread"
+                className={`inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-[10px] font-medium ${THREAD_STATUS_BADGE_CLASSES[threadStatus]}`}
+                aria-label={`${THREAD_STATUS_LABELS[threadStatus]} thread`}
               >
-                Resolved
-              </span>
-            )}
-            {thread.acceptedAt && !thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt && (
-              <span
-                className="inline-flex h-5 shrink-0 items-center rounded-full border border-blue-500/60 px-2 text-[10px] font-medium text-blue-400"
-                aria-label="Accepted thread"
-              >
-                Accepted
-              </span>
-            )}
-            {thread.toVerifyAt && !thread.readyAt && !thread.resolvedAt && (
-              <span
-                className="inline-flex h-5 shrink-0 items-center rounded-full border border-purple-500/60 px-2 text-[10px] font-medium text-purple-400"
-                aria-label="Verify by agent thread"
-              >
-                Verify by agent
-              </span>
-            )}
-            {thread.readyAt && !thread.resolvedAt && (
-              <span
-                className="inline-flex h-5 shrink-0 items-center rounded-full border border-green-500/60 px-2 text-[10px] font-medium text-green-400"
-                aria-label="Ready for review thread"
-              >
-                Ready for review
+                {THREAD_STATUS_LABELS[threadStatus]}
               </span>
             )}
             {isCollapsed && (
@@ -454,26 +463,22 @@ export function CommentThreadCard({
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {onThreadStatusChange && (
                 <div className="inline-flex overflow-hidden rounded border border-github-border">
-                  {(['open', 'accepted', 'to_verify', 'ready', 'resolved'] as const).map(
-                    (status) => (
-                      <button
-                        key={status}
-                        type="button"
-                        aria-pressed={threadStatus === status}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onThreadStatusChange(status);
-                        }}
-                        className={`border-r border-github-border px-2 py-1 text-xs capitalize transition-colors last:border-r-0 ${
-                          threadStatus === status
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-github-bg-tertiary text-github-text-secondary hover:bg-github-bg-primary hover:text-github-text-primary'
-                        }`}
-                      >
-                        {THREAD_STATUS_LABELS[status]}
-                      </button>
-                    ),
-                  )}
+                  <span className="border-r border-github-border bg-blue-600 px-2 py-1 text-xs text-white">
+                    {THREAD_STATUS_LABELS[threadStatus]}
+                  </span>
+                  {THREAD_STATUS_ACTIONS[threadStatus].map((action) => (
+                    <button
+                      key={action.status}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onThreadStatusChange(action.status);
+                      }}
+                      className="border-r border-github-border bg-github-bg-tertiary px-2 py-1 text-xs text-github-text-secondary transition-colors last:border-r-0 hover:bg-github-bg-primary hover:text-github-text-primary"
+                    >
+                      {action.label}
+                    </button>
+                  ))}
                 </div>
               )}
               <div className="ml-auto flex shrink-0 items-center justify-end gap-1.5">

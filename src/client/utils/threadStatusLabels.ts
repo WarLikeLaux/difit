@@ -2,8 +2,9 @@ import type { CommentThreadStatus } from '../../types/diff';
 
 export const THREAD_STATUS_LABELS = {
   open: 'Open',
-  accepted: 'Accepted',
-  to_verify: 'Verify by agent',
-  ready: 'Ready for review',
+  accepted: 'Agent Working',
+  changes_requested: 'Changes Requested',
+  to_verify: 'Verify Fix',
+  ready: 'Ready',
   resolved: 'Resolved',
 } satisfies Record<CommentThreadStatus, string>;

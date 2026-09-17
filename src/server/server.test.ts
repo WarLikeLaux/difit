@@ -57,7 +57,10 @@ async function postComments(
 // Mock GitDiffParser
 vi.mock('./git-diff.js', () => {
   class GitDiffParserMock {
-    constructor() {
+    constructor(
+      readonly repositoryPath?: string,
+      readonly includeUntracked?: boolean,
+    ) {
       parserInstances.push(this);
     }
 
@@ -508,6 +511,18 @@ describe('Server Integration Tests', () => {
         false,
         4,
       );
+    });
+
+    it('enables live untracked-file inclusion in the diff parser', async () => {
+      const result = await startServer({
+        selection: { targetCommitish: '.', baseCommitish: 'HEAD' },
+        preferredPort: 9026,
+        includeUntracked: true,
+      });
+      servers.push(result.server);
+
+      const parser = parserInstances.at(-1);
+      expect(parser?.includeUntracked).toBe(true);
     });
   });
 
@@ -1323,6 +1338,20 @@ describe('Server Integration Tests', () => {
       let data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
       let thread = data.threads.find((item: any) => item.id === 'status-thread');
       expect(thread.acceptedAt).toEqual(expect.any(String));
+      expect(thread.changesRequestedAt).toBeUndefined();
+      expect(thread.toVerifyAt).toBeUndefined();
+      expect(thread.readyAt).toBeUndefined();
+      expect(thread.resolvedAt).toBeUndefined();
+
+      await fetch(`http://localhost:${port}/api/comments/status-thread/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'changes_requested' }),
+      });
+      data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
+      thread = data.threads.find((item: any) => item.id === 'status-thread');
+      expect(thread.acceptedAt).toBeUndefined();
+      expect(thread.changesRequestedAt).toEqual(expect.any(String));
       expect(thread.toVerifyAt).toBeUndefined();
       expect(thread.readyAt).toBeUndefined();
       expect(thread.resolvedAt).toBeUndefined();
@@ -1335,6 +1364,7 @@ describe('Server Integration Tests', () => {
       data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
       thread = data.threads.find((item: any) => item.id === 'status-thread');
       expect(thread.acceptedAt).toBeUndefined();
+      expect(thread.changesRequestedAt).toBeUndefined();
       expect(thread.toVerifyAt).toEqual(expect.any(String));
       expect(thread.readyAt).toBeUndefined();
       expect(thread.resolvedAt).toBeUndefined();
@@ -1356,6 +1386,7 @@ describe('Server Integration Tests', () => {
       data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
       thread = data.threads.find((item: any) => item.id === 'status-thread');
       expect(thread.acceptedAt).toBeUndefined();
+      expect(thread.changesRequestedAt).toBeUndefined();
       expect(thread.toVerifyAt).toBeUndefined();
       expect(thread.readyAt).toEqual(expect.any(String));
       expect(thread.resolvedAt).toBeUndefined();
@@ -1368,6 +1399,7 @@ describe('Server Integration Tests', () => {
       data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
       thread = data.threads.find((item: any) => item.id === 'status-thread');
       expect(thread.acceptedAt).toBeUndefined();
+      expect(thread.changesRequestedAt).toBeUndefined();
       expect(thread.toVerifyAt).toBeUndefined();
       expect(thread.readyAt).toBeUndefined();
       expect(thread.resolvedAt).toBeUndefined();

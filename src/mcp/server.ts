@@ -207,7 +207,7 @@ export function createDifitMcpServer(dependencies: DifitMcpDependencies = {}): M
     {
       title: 'Set agent-managed review status',
       description:
-        'Set open after a failed verification, or ready only after implementing an Accepted fix with tests or successfully handling a verify-by-agent request. Never edit code for an Open thread. Replies and acknowledgements alone never change status. Accepted, verify-by-agent, and resolved belong to the user.',
+        'Set open after a failed verification, or ready only after implementing an Assign Agent request with tests or successfully handling Verify Fix. Never edit code for an Open thread or a Changes Requested thread. Replies and acknowledgements alone never change status. Assign Agent, Request Changes, Verify Fix, and Resolve belong to the user.',
       inputSchema: z.object({
         port: portSchema,
         threadId: threadIdSchema,

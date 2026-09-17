@@ -21,6 +21,7 @@ interface CommentThreadsResponse {
     filePath: string;
     position: unknown;
     acceptedAt?: string;
+    changesRequestedAt?: string;
     toVerifyAt?: string;
     readyAt?: string;
     resolvedAt?: string;
@@ -35,7 +36,7 @@ interface CommentThreadsResponse {
 }
 
 type CommentOutputFormat = 'text' | 'json';
-type MutableCommentStatus = 'open' | 'accepted' | 'to_verify' | 'ready';
+type MutableCommentStatus = 'open' | 'accepted' | 'changes_requested' | 'to_verify' | 'ready';
 
 interface CommentWatchCursor {
   version: 1;
@@ -589,7 +590,7 @@ export function createCommentCommand(): Command {
     )
     .option(
       '--cursor-file <path>',
-      'persist delivery state and stream User messages and To verify transitions once as JSON',
+      'persist delivery state and stream User messages plus Assign Agent and Verify Fix transitions once as JSON',
     )
     .action(async (opts: { port: number; format: string; cursorFile?: string }) => {
       try {
@@ -672,7 +673,13 @@ export function createCommentCommand(): Command {
     comment,
     'accept',
     'accepted',
-    'Record that the reviewer approved comment threads for implementation',
+    'Assign comment threads to the attached agent for implementation',
+  );
+  addStatusCommand(
+    comment,
+    'request-changes',
+    'changes_requested',
+    'Record that fixes were requested from an external contributor',
   );
   addStatusCommand(
     comment,
