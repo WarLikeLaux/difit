@@ -641,7 +641,7 @@ describe('App Component - Comment sync', () => {
     renderApp();
 
     expect(await screen.findByRole('heading', { name: 'Comments' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Accepted (1)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Agent Working (1)' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );

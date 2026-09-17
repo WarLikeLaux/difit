@@ -13,6 +13,7 @@ const EMPTY_DIFF_FILES: DiffFile[] = [];
 const THREAD_FILTER_ORDER: CommentThreadStatus[] = [
   'open',
   'accepted',
+  'changes_requested',
   'to_verify',
   'ready',
   'resolved',
@@ -22,6 +23,7 @@ function getThreadStatusFilter(thread: CommentThread): CommentThreadStatus {
   if (thread.resolvedAt) return 'resolved';
   if (thread.readyAt) return 'ready';
   if (thread.toVerifyAt) return 'to_verify';
+  if (thread.changesRequestedAt) return 'changes_requested';
   if (thread.acceptedAt) return 'accepted';
   return 'open';
 }
@@ -240,7 +242,11 @@ export function CommentsView({
                 ],
                 [
                   'accepted',
-                  `Accepted (${comments.filter((thread) => threadMatchesFilter(thread, 'accepted')).length})`,
+                  `${THREAD_STATUS_LABELS.accepted} (${comments.filter((thread) => threadMatchesFilter(thread, 'accepted')).length})`,
+                ],
+                [
+                  'changes_requested',
+                  `${THREAD_STATUS_LABELS.changes_requested} (${comments.filter((thread) => threadMatchesFilter(thread, 'changes_requested')).length})`,
                 ],
                 [
                   'to_verify',

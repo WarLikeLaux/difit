@@ -27,6 +27,8 @@ describe('createCommentCommand', () => {
     expect(subcommandNames).toContain('ack');
     expect(subcommandNames).toContain('watch');
     expect(subcommandNames).toContain('resolve');
+    expect(subcommandNames).toContain('accept');
+    expect(subcommandNames).toContain('request-changes');
     expect(subcommandNames).toContain('verify');
     expect(subcommandNames).toContain('ready');
   });
@@ -689,6 +691,19 @@ describe('comment subcommand integration', () => {
   });
 
   describe('ready', () => {
+    it('marks threads as waiting for an external fix', async () => {
+      mockFetch.mockResolvedValue(jsonResponse({ success: true, status: 'changes_requested' }));
+
+      const command = createCommentCommand();
+      await command.parseAsync(['node', 'difit', 'request-changes', '--port', '4966', 'thread-1']);
+
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4966/api/comments/thread-1/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'changes_requested' }),
+      });
+    });
+
     it('marks verified threads as ready without resolving them', async () => {
       mockFetch.mockResolvedValue(jsonResponse({ success: true, status: 'ready' }));
 

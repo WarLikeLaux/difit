@@ -48,7 +48,7 @@ interface HubReviewThread {
   id: string;
   filePath: string;
   line: number;
-  status: 'open' | 'accepted' | 'to_verify' | 'ready' | 'resolved';
+  status: 'open' | 'accepted' | 'changes_requested' | 'to_verify' | 'ready' | 'resolved';
   updatedAt: string;
   lastAuthor?: string;
   lastMessage: string;
@@ -111,6 +111,7 @@ function getThreadStatus(thread: DiffCommentThread): HubReviewThread['status'] {
   if (thread.resolvedAt) return 'resolved';
   if (thread.readyAt) return 'ready';
   if (thread.toVerifyAt) return 'to_verify';
+  if (thread.changesRequestedAt) return 'changes_requested';
   if (thread.acceptedAt) return 'accepted';
   return 'open';
 }
@@ -199,6 +200,7 @@ export async function getHubReviews(auth = getDefaultAuthService()): Promise<Hub
       const counts: HubReview['counts'] = {
         open: 0,
         accepted: 0,
+        changes_requested: 0,
         to_verify: 0,
         ready: 0,
         resolved: 0,
@@ -330,7 +332,7 @@ const HUB_HTML = `<!doctype html>
     const relativeTime=(value)=>{const seconds=Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/1000));if(seconds<60)return'just now';if(seconds<3600)return Math.floor(seconds/60)+'m ago';if(seconds<86400)return Math.floor(seconds/3600)+'h ago';if(seconds<604800)return Math.floor(seconds/86400)+'d ago';return new Intl.DateTimeFormat(undefined,{dateStyle:'medium'}).format(new Date(value))};
     const reviewState=(review)=>review.agentConnected?'connected':review.pendingMessages>0?'waiting':'saved';
     const stateLabel=(review)=>review.agentConnected?'Live':review.pendingMessages>0?review.pendingMessages+' waiting':'Saved';
-    const stats=(review)=>[['open','Open'],['accepted','Accepted'],['to_verify','Verify by agent'],['ready','Ready for review']].filter(([key])=>review.counts[key]>0).map(([key,label])=>'<span class="'+key+'"><strong>'+review.counts[key]+'</strong> '+label+'</span>').join('')||'<span>No comments</span>';
+    const stats=(review)=>[['open','Open'],['accepted','Agent working'],['changes_requested','Changes requested'],['to_verify','Verify fix'],['ready','Ready']].filter(([key])=>review.counts[key]>0).map(([key,label])=>'<span class="'+key+'"><strong>'+review.counts[key]+'</strong> '+label+'</span>').join('')||'<span>No comments</span>';
     function reviewCard(review){const latest=review.threads[0];const state=reviewState(review);return '<article class="review-card '+state+'"><span class="state-rail" aria-hidden="true"></span><div class="review-main"><div class="review-title"><strong>'+esc(review.repositoryName)+'</strong><span class="slash">/</span><span class="branch">'+esc(review.label)+'</span><span class="state-label">'+esc(stateLabel(review))+'</span></div><div class="review-meta"><span>'+kindLabel(review)+'</span><time datetime="'+esc(review.updatedAt)+'" title="'+esc(new Date(review.updatedAt).toLocaleString())+'">'+(latest?'Last reply ':'Added ')+relativeTime(review.updatedAt)+'</time><span class="review-stats">'+stats(review)+'</span></div>'+(latest?'<div class="latest"><span class="author">'+esc(latest.lastAuthor||'Unknown')+':</span> '+esc(latest.lastMessage)+'</div>':'')+'</div><div class="actions">'+(review.viewerUrl?'<a class="primary" href="'+esc(review.viewerUrl)+'">Open<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>':'<span class="unavailable">Unavailable</span>')+(review.reviewUrl?'<a href="'+esc(review.reviewUrl)+'" target="_blank" rel="noreferrer">MR<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4h6v6M12 4 5 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></a>':'')+'<button type="button" class="delete-review" data-delete-review="'+esc(review.id)+'" aria-label="Delete review" title="Delete review"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9m-6.5 0V3h4v1.5m-5.5 0 .5 8h6l.5-8M6.75 6.5v4m2.5-4v4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></article>'}
     function repositoryOptions(){const map=new Map();for(const review of reviews){const item=map.get(review.repositoryPath);if(item){item.count+=1;item.live||=review.agentConnected}else map.set(review.repositoryPath,{path:review.repositoryPath,name:review.repositoryName,count:1,live:review.agentConnected})}return [...map.values()].sort((left,right)=>left.name.localeCompare(right.name))}
     function renderRepositoryFilters(options){if(selectedRepository!=='all'&&!options.some((option)=>option.path===selectedRepository))selectedRepository='all';repositoryFilters.innerHTML='<button type="button" class="repo-filter '+(selectedRepository==='all'?'active':'')+'" data-repository="all" aria-pressed="'+(selectedRepository==='all')+'">All <span class="count">'+reviews.length+'</span></button>'+options.map((option,index)=>'<button type="button" class="repo-filter '+(selectedRepository===option.path?'active':'')+'" data-repository="'+index+'" aria-pressed="'+(selectedRepository===option.path)+'">'+esc(option.name)+' <span class="count">'+option.count+'</span>'+(option.live?'<span class="live-dot" aria-label="Agent connected"></span>':'')+'</button>').join('');repositoryFilters.querySelectorAll('[data-repository]').forEach((button)=>button.addEventListener('click',()=>{selectedRepository=button.dataset.repository==='all'?'all':options[Number(button.dataset.repository)].path;render()}))}

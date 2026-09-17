@@ -85,6 +85,7 @@ export interface ServerOptions {
   diffMode?: DiffMode;
   repoPath?: string;
   contextLines?: number;
+  includeUntracked?: boolean;
   reviewUrl?: string;
   authService?: AuthService;
 }
@@ -183,7 +184,7 @@ export async function startServer(options: ServerOptions): Promise<{
     initialCommentImports.length > 0
       ? createHash('sha256').update(serializeCommentImports(initialCommentImports)).digest('hex')
       : undefined;
-  const parser = new GitDiffParser(repositoryPath);
+  const parser = new GitDiffParser(repositoryPath, options.includeUntracked);
   let agentEventInbox: AgentEventInbox | undefined;
   const fileWatcher = new FileWatcherService();
   const generatedStatusCache = new Map<
@@ -764,6 +765,7 @@ export async function startServer(options: ServerOptions): Promise<{
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
       acceptedAt: thread.acceptedAt,
+      changesRequestedAt: thread.changesRequestedAt,
       toVerifyAt: thread.toVerifyAt,
       readyAt: thread.readyAt,
       resolvedAt: thread.resolvedAt,
@@ -812,6 +814,7 @@ export async function startServer(options: ServerOptions): Promise<{
       createdAt: thread.createdAt || firstMessage?.createdAt || now,
       updatedAt: thread.updatedAt || lastMessage?.updatedAt || thread.createdAt || now,
       acceptedAt: thread.acceptedAt,
+      changesRequestedAt: thread.changesRequestedAt,
       toVerifyAt: thread.toVerifyAt,
       readyAt: thread.readyAt,
       resolvedAt: thread.resolvedAt,
@@ -1058,6 +1061,7 @@ export async function startServer(options: ServerOptions): Promise<{
             ...thread,
             updatedAt: now,
             acceptedAt: undefined,
+            changesRequestedAt: undefined,
             toVerifyAt: undefined,
             readyAt: undefined,
             resolvedAt: now,
@@ -1082,6 +1086,7 @@ export async function startServer(options: ServerOptions): Promise<{
     if (
       status !== 'open' &&
       status !== 'accepted' &&
+      status !== 'changes_requested' &&
       status !== 'to_verify' &&
       status !== 'ready' &&
       status !== 'resolved'
@@ -1103,6 +1108,7 @@ export async function startServer(options: ServerOptions): Promise<{
             ...thread,
             updatedAt: now,
             acceptedAt: status === 'accepted' ? now : undefined,
+            changesRequestedAt: status === 'changes_requested' ? now : undefined,
             toVerifyAt: status === 'to_verify' ? now : undefined,
             readyAt: status === 'ready' ? now : undefined,
             resolvedAt: status === 'resolved' ? now : undefined,
