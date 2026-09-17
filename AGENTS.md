@@ -1,5 +1,13 @@
 # Repository Guidelines
 
+## Delivery Policy
+
+- Every completed product code change must be deployed locally after its relevant checks pass. Use the repository's local build/install workflow and verify the affected CLI or service afterward.
+- For non-visual features and fixes, successful verification authorizes committing the task's exact files and pushing the current branch without waiting for a separate request. Deploy before commit and push so a failed deployment is not published.
+- If a feature or fix does not work on its first delivered attempt and needs another corrective iteration, deploy subsequent fixes for validation but do not commit or push them until the user explicitly confirms the result works. This acceptance gate overrides the non-visual automatic-push rule.
+- For changes that affect visible UI or UX, deploy the uncommitted change for user review, but do not commit or push it until the user explicitly accepts the visual result. After acceptance, commit and push the reviewed files.
+- A user's explicit request to avoid deployment, commits, or pushes overrides these defaults. Never include unrelated worktree changes in an automatic commit.
+
 ## Project Structure & Module Organization
 
 The TypeScript sources live under `src`, split by runtime: `src/cli` handles command parsing and Git integration, `src/server` hosts the Express diff service, `src/client` renders the React web UI, and shared helpers sit in `src/utils` and `src/types`. Unit and integration tests live next to the code they cover as `*.test.ts` or `*.test.tsx`, and fixtures under `docs/` support screenshots and copy decks. Built artifacts land in `dist/` after `pnpm build`; do not edit them manually. Static assets for the UI reside in `public/`, while automation scripts live in `scripts/`.
