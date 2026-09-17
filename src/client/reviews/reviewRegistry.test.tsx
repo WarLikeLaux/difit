@@ -30,6 +30,7 @@ describe('reviewRegistry', () => {
               label: 'feature/one',
               running: true,
               available: true,
+              stale: false,
               updatedAt: '2026-09-17T10:00:00.000Z',
               threads: [],
             },
@@ -39,6 +40,7 @@ describe('reviewRegistry', () => {
               label: 'feature/two',
               running: true,
               available: true,
+              stale: false,
               updatedAt: '2026-09-17T10:01:00.000Z',
               threads: [],
             },
@@ -71,5 +73,40 @@ describe('reviewRegistry', () => {
     expect(result.current.activeReviewId).toBe('review-two');
     expect(window.location.pathname).toBe('/reviews/review-two/');
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('hides read-only reviews from the active review switcher', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            id: 'review-one',
+            repositoryName: 'api',
+            label: 'feature/one',
+            running: true,
+            available: true,
+            stale: true,
+            updatedAt: '2026-09-17T10:00:00.000Z',
+            threads: [],
+          },
+          {
+            id: 'review-two',
+            repositoryName: 'api',
+            label: 'feature/two',
+            running: true,
+            available: true,
+            stale: false,
+            updatedAt: '2026-09-17T10:01:00.000Z',
+            threads: [],
+          },
+        ]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const { result } = renderHook(() => useReviewRegistry());
+
+    await waitFor(() => expect(result.current.reviews).toHaveLength(1));
+    expect(result.current.reviews[0]?.id).toBe('review-two');
   });
 });
