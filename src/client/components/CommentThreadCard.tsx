@@ -651,6 +651,7 @@ export function CommentThreadCard({
           >
             {isReplying ? (
               <CommentForm
+                draftKey={`reply:${thread.id}`}
                 onSubmit={async (body) => {
                   await onReplyToThread(thread.id, body);
                   setIsReplying(false);
