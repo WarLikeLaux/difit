@@ -10,6 +10,7 @@ export interface ActiveReview {
   label: string;
   running: boolean;
   available: boolean;
+  stale: boolean;
   updatedAt: string;
   threads: ActiveReviewThread[];
   unreadCount: number;
@@ -88,7 +89,7 @@ export function useReviewRegistry(): ReviewRegistry {
       if (!currentReviewId) return;
       setReviews(
         payload
-          .filter((review) => review.running && review.available)
+          .filter((review) => review.running && review.available && !review.stale)
           .map((review) => withUnreadCount(review, currentReviewId)),
       );
     } catch {
