@@ -48,7 +48,7 @@ interface HubReviewThread {
   id: string;
   filePath: string;
   line: number;
-  status: 'open' | 'accepted' | 'changes_requested' | 'to_verify' | 'ready' | 'resolved';
+  status: 'open' | 'accepted' | 'changes_requested' | 'to_verify' | 'ready' | 'closed' | 'resolved';
   updatedAt: string;
   lastAuthor?: string;
   lastMessage: string;
@@ -108,6 +108,7 @@ function normalizeExternalReviewUrl(value: string | undefined): string | undefin
 }
 
 function getThreadStatus(thread: DiffCommentThread): HubReviewThread['status'] {
+  if (thread.closedAt) return 'closed';
   if (thread.resolvedAt) return 'resolved';
   if (thread.readyAt) return 'ready';
   if (thread.toVerifyAt) return 'to_verify';
@@ -203,6 +204,7 @@ export async function getHubReviews(auth = getDefaultAuthService()): Promise<Hub
         changes_requested: 0,
         to_verify: 0,
         ready: 0,
+        closed: 0,
         resolved: 0,
       };
       for (const thread of threads) counts[thread.status] += 1;

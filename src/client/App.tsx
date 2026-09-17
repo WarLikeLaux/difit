@@ -21,6 +21,7 @@ import {
   type DiffSide,
   type LineNumber,
   type CommentThread,
+  type CommentThreadStatus,
   type RevisionsResponse,
 } from '../types/diff';
 import { DEFAULT_DIFF_VIEW_MODE, normalizeDiffViewMode } from '../utils/diffMode';
@@ -167,6 +168,50 @@ interface ReviewWorkspaceProps {
   activeReviewId: string | null;
   reviews: ActiveReview[];
   onSelectReview: (reviewId: string) => void;
+}
+
+interface ReviewLoadingHeaderProps {
+  isMobile: boolean;
+  sidebarOpen: boolean;
+  sidebarWidth: number;
+}
+
+function ReviewLoadingHeader({ isMobile, sidebarOpen, sidebarWidth }: ReviewLoadingHeaderProps) {
+  return (
+    <header
+      className={`shrink-0 border-b border-github-border bg-github-bg-secondary ${
+        isMobile ? 'h-[97px]' : 'flex h-[61px] items-center'
+      }`}
+      aria-label="Loading review controls"
+    >
+      <div
+        className={`flex items-center justify-between ${isMobile ? 'h-[52px] px-3' : 'h-full px-4'}`}
+        style={{ width: isMobile ? '100%' : sidebarOpen ? `${sidebarWidth}px` : 'auto' }}
+      >
+        <Logo style={{ height: '18px', color: 'var(--color-github-text-secondary)' }} />
+        <div className="flex items-center gap-1 text-github-text-muted" aria-hidden="true">
+          {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
+          <Settings size={18} />
+        </div>
+      </div>
+      {!isMobile && (
+        <div
+          className="h-[45px] shrink-0 border-r border-github-border"
+          style={{ width: sidebarOpen ? '4px' : '0px' }}
+          aria-hidden="true"
+        />
+      )}
+      <div
+        className={`flex flex-1 items-center justify-between ${
+          isMobile ? 'h-[44px] px-3 pb-2' : 'h-full px-4'
+        }`}
+        aria-hidden="true"
+      >
+        <div className="h-8 w-56 max-w-[45%] animate-pulse rounded-md bg-github-bg-tertiary" />
+        <div className="h-6 w-36 max-w-[30%] animate-pulse rounded bg-github-bg-tertiary" />
+      </div>
+    </header>
+  );
 }
 
 function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWorkspaceProps) {
@@ -336,6 +381,39 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
   const serverCommentVersionRef = useRef<number | null>(null);
   const serverCommentSessionEpochRef = useRef<string | null>(null);
   const pendingBootstrapAfterLocalResetRef = useRef(false);
+
+  const handleThreadStatusChange = useCallback(
+    (threadId: string, status: CommentThreadStatus) => {
+      // Status transitions are small, ordered mutations. Persist them directly so a fast
+      // review switch cannot unmount this workspace before the full-thread sync effect runs.
+      skipNextCommentSyncRef.current = true;
+      setThreadStatus(threadId, status);
+      const statusApiUrl = getCommentApiUrl(`/api/comments/${encodeURIComponent(threadId)}/status`);
+
+      void fetch(statusApiUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+        keepalive: true,
+      })
+        .then(async (response) => {
+          const result = (await response.json().catch(() => null)) as {
+            version?: number;
+            error?: string;
+          } | null;
+          if (!response.ok) {
+            throw new Error(result?.error || `Failed to update thread status: ${response.status}`);
+          }
+          if (typeof result?.version === 'number') {
+            serverCommentVersionRef.current = result.version;
+          }
+        })
+        .catch((statusError: unknown) => {
+          console.error('Failed to persist thread status:', statusError);
+        });
+    },
+    [getCommentApiUrl, setThreadStatus],
+  );
 
   useEffect(() => {
     if (commentsContextKey !== bootstrappedCommentsKey) {
@@ -721,6 +799,7 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
         changesRequestedAt: thread.changesRequestedAt,
         toVerifyAt: thread.toVerifyAt,
         readyAt: thread.readyAt,
+        closedAt: thread.closedAt,
         resolvedAt: thread.resolvedAt,
         codeContent: thread.codeSnapshot?.content,
         isOutdated: isThreadOutdated(thread, fileLineIndexByPath.get(thread.filePath)),
@@ -729,15 +808,16 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
       })),
     [threads, fileLineIndexByPath],
   );
-  const resolvedThreadCount = useMemo(
-    () => normalizedThreads.filter((thread) => Boolean(thread.resolvedAt)).length,
+  const closedThreadCount = useMemo(
+    () =>
+      normalizedThreads.filter((thread) => Boolean(thread.closedAt || thread.resolvedAt)).length,
     [normalizedThreads],
   );
   const diffThreads = useMemo(
     () =>
       showResolvedComments
         ? normalizedThreads
-        : normalizedThreads.filter((thread) => !thread.resolvedAt),
+        : normalizedThreads.filter((thread) => !thread.closedAt && !thread.resolvedAt),
     [normalizedThreads, showResolvedComments],
   );
   const codePreviewThread = useMemo(
@@ -1292,7 +1372,9 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
     }
 
     hasSelectedInitialMainViewRef.current = true;
-    setMainView(threads.some((thread) => !thread.resolvedAt) ? 'comments' : 'diff');
+    setMainView(
+      threads.some((thread) => !thread.closedAt && !thread.resolvedAt) ? 'comments' : 'diff',
+    );
   }, [hasBootstrappedComments, threads]);
 
   // Trigger sparkle animation when all files are viewed
@@ -1550,6 +1632,11 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
   if (loading) {
     return (
       <div className="flex h-screen flex-col bg-github-bg-primary">
+        <ReviewLoadingHeader
+          isMobile={isMobile}
+          sidebarOpen={isFileTreeOpen}
+          sidebarWidth={sidebarWidth}
+        />
         {reviewSwitcher}
         <div className="flex flex-1 items-center justify-center text-base text-github-text-secondary">
           Loading diff...
@@ -1561,6 +1648,11 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
   if (error) {
     return (
       <div className="flex h-screen flex-col bg-github-bg-primary">
+        <ReviewLoadingHeader
+          isMobile={isMobile}
+          sidebarOpen={isFileTreeOpen}
+          sidebarWidth={sidebarWidth}
+        />
         {reviewSwitcher}
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
           <h2 className="mb-2 text-2xl text-github-danger">Error</h2>
@@ -1573,6 +1665,11 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
   if (!diffData) {
     return (
       <div className="flex h-screen flex-col bg-github-bg-primary">
+        <ReviewLoadingHeader
+          isMobile={isMobile}
+          sidebarOpen={isFileTreeOpen}
+          sidebarWidth={sidebarWidth}
+        />
         {reviewSwitcher}
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
           <h2 className="mb-2 text-2xl text-github-danger">No data</h2>
@@ -1593,9 +1690,9 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
     <WordHighlightProvider>
       <div className="h-screen flex flex-col" onClickCapture={handleGlobalClick}>
         <header
-          className={`bg-github-bg-secondary border-b border-github-border flex ${
+          className={`shrink-0 bg-github-bg-secondary border-b border-github-border flex ${
             isMobile ? 'flex-col' : 'flex-row items-center'
-          }`}
+          } ${isMobile ? 'min-h-[97px]' : 'min-h-[61px]'}`}
         >
           <div
             className={`flex items-center justify-between w-full ${
@@ -1719,19 +1816,19 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
                   Comments ({threads.length})
                 </button>
               </div>
-              {mainView === 'diff' && resolvedThreadCount > 0 && (
+              {mainView === 'diff' && closedThreadCount > 0 && (
                 <button
                   type="button"
                   aria-pressed={showResolvedComments}
                   aria-label={
                     showResolvedComments
-                      ? 'Hide resolved comments'
-                      : `Show resolved comments (${resolvedThreadCount})`
+                      ? 'Hide closed comments'
+                      : `Show closed comments (${closedThreadCount})`
                   }
                   title={
                     showResolvedComments
-                      ? 'Hide resolved comments'
-                      : `Show resolved comments (${resolvedThreadCount})`
+                      ? 'Hide closed comments'
+                      : `Show closed comments (${closedThreadCount})`
                   }
                   onClick={toggleResolvedComments}
                   className={`flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-xs transition-colors ${
@@ -1742,7 +1839,7 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
                 >
                   {showResolvedComments ? <Eye size={14} /> : <EyeOff size={14} />}
                   <span className={isMobile ? 'sr-only' : undefined}>
-                    Resolved ({resolvedThreadCount})
+                    Closed ({closedThreadCount})
                   </span>
                 </button>
               )}
@@ -1882,7 +1979,7 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
               onGenerateThreadPrompt={handleGenerateThreadPrompt}
               onRemoveThread={removeThread}
               onDeleteThread={deleteThread}
-              onThreadStatusChange={setThreadStatus}
+              onThreadStatusChange={handleThreadStatusChange}
               onReplyToThread={handleReplyToThread}
               onRemoveMessage={removeMessage}
               onUpdateMessage={updateMessage}
@@ -1917,7 +2014,7 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
             files={diffData.files}
             onRemoveThread={removeThread}
             onDeleteThread={deleteThread}
-            onThreadStatusChange={setThreadStatus}
+            onThreadStatusChange={handleThreadStatusChange}
             onNavigateToCode={handleNavigateToComment}
             onShowCode={handleShowCode}
             onGenerateThreadPrompt={handleGenerateThreadPrompt}
@@ -2059,7 +2156,7 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
                       onGenerateThreadPrompt={handleGenerateThreadPrompt}
                       onRemoveThread={removeThread}
                       onDeleteThread={deleteThread}
-                      onThreadStatusChange={setThreadStatus}
+                      onThreadStatusChange={handleThreadStatusChange}
                       onReplyToThread={handleReplyToThread}
                       onRemoveMessage={removeMessage}
                       onUpdateMessage={updateMessage}

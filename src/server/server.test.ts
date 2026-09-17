@@ -1346,6 +1346,16 @@ describe('Server Integration Tests', () => {
       await fetch(`http://localhost:${port}/api/comments/status-thread/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'closed' }),
+      });
+      data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
+      thread = data.threads.find((item: any) => item.id === 'status-thread');
+      expect(thread.closedAt).toEqual(expect.any(String));
+      expect(thread.resolvedAt).toBeUndefined();
+
+      await fetch(`http://localhost:${port}/api/comments/status-thread/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'changes_requested' }),
       });
       data = (await (await fetch(`http://localhost:${port}/api/comments-json`)).json()) as any;
@@ -1354,6 +1364,7 @@ describe('Server Integration Tests', () => {
       expect(thread.changesRequestedAt).toEqual(expect.any(String));
       expect(thread.toVerifyAt).toBeUndefined();
       expect(thread.readyAt).toBeUndefined();
+      expect(thread.closedAt).toBeUndefined();
       expect(thread.resolvedAt).toBeUndefined();
 
       await fetch(`http://localhost:${port}/api/comments/status-thread/status`, {

@@ -8,18 +8,20 @@ import { THREAD_STATUS_LABELS } from '../utils/threadStatusLabels';
 import { CommentThreadCard } from './CommentThreadCard';
 import type { AppearanceSettings } from './SettingsModal';
 
-type ThreadFilter = 'all' | CommentThreadStatus;
+type StatusThreadFilter = Exclude<CommentThreadStatus, 'resolved'>;
+type ThreadFilter = 'all' | StatusThreadFilter;
 const EMPTY_DIFF_FILES: DiffFile[] = [];
-const THREAD_FILTER_ORDER: CommentThreadStatus[] = [
+const THREAD_FILTER_ORDER: StatusThreadFilter[] = [
   'open',
   'accepted',
   'changes_requested',
   'to_verify',
   'ready',
-  'resolved',
+  'closed',
 ];
 
 function getThreadStatusFilter(thread: CommentThread): CommentThreadStatus {
+  if (thread.closedAt) return 'closed';
   if (thread.resolvedAt) return 'resolved';
   if (thread.readyAt) return 'ready';
   if (thread.toVerifyAt) return 'to_verify';
@@ -29,7 +31,13 @@ function getThreadStatusFilter(thread: CommentThread): CommentThreadStatus {
 }
 
 function threadMatchesFilter(thread: CommentThread, filter: ThreadFilter): boolean {
-  return filter === 'all' || getThreadStatusFilter(thread) === filter;
+  if (filter === 'all') return true;
+  const status = getThreadStatusFilter(thread);
+  return filter === 'closed' ? status === 'closed' || status === 'resolved' : status === filter;
+}
+
+function getThreadFilterForStatus(status: CommentThreadStatus): StatusThreadFilter {
+  return status === 'resolved' ? 'closed' : status;
 }
 
 function getInitialThreadFilter(comments: CommentThread[]): ThreadFilter {
@@ -42,8 +50,8 @@ function getInitialThreadFilter(comments: CommentThread[]): ThreadFilter {
 
 function getNextAvailableThreadFilter(
   comments: CommentThread[],
-  currentFilter: CommentThreadStatus,
-): CommentThreadStatus | undefined {
+  currentFilter: StatusThreadFilter,
+): StatusThreadFilter | undefined {
   const currentIndex = THREAD_FILTER_ORDER.indexOf(currentFilter);
   const filtersAfterCurrent = THREAD_FILTER_ORDER.slice(currentIndex + 1);
   const filtersBeforeCurrent = THREAD_FILTER_ORDER.slice(0, currentIndex);
@@ -55,14 +63,14 @@ function getNextAvailableThreadFilter(
 function getMovedThreadFilter(
   previousComments: CommentThread[],
   comments: CommentThread[],
-  currentFilter: CommentThreadStatus,
-): CommentThreadStatus | undefined {
+  currentFilter: StatusThreadFilter,
+): StatusThreadFilter | undefined {
   const commentsById = new Map(comments.map((thread) => [thread.id, thread]));
   for (const previousThread of previousComments) {
     if (!threadMatchesFilter(previousThread, currentFilter)) continue;
     const currentThread = commentsById.get(previousThread.id);
     if (!currentThread) continue;
-    const currentStatus = getThreadStatusFilter(currentThread);
+    const currentStatus = getThreadFilterForStatus(getThreadStatusFilter(currentThread));
     if (currentStatus !== currentFilter) return currentStatus;
   }
   return undefined;
@@ -216,8 +224,11 @@ export function CommentsView({
 
     const movedThreadFilter = getMovedThreadFilter(previousComments, comments, threadFilter);
     const nextFilter =
-      requestedStatus && comments.some((thread) => threadMatchesFilter(thread, requestedStatus))
-        ? requestedStatus
+      requestedStatus &&
+      comments.some((thread) =>
+        threadMatchesFilter(thread, getThreadFilterForStatus(requestedStatus)),
+      )
+        ? getThreadFilterForStatus(requestedStatus)
         : movedThreadFilter
           ? movedThreadFilter
           : getNextAvailableThreadFilter(comments, threadFilter);
@@ -257,8 +268,8 @@ export function CommentsView({
                   `${THREAD_STATUS_LABELS.ready} (${comments.filter((thread) => threadMatchesFilter(thread, 'ready')).length})`,
                 ],
                 [
-                  'resolved',
-                  `Resolved (${comments.filter((thread) => threadMatchesFilter(thread, 'resolved')).length})`,
+                  'closed',
+                  `Closed (${comments.filter((thread) => threadMatchesFilter(thread, 'closed')).length})`,
                 ],
               ] as const
             ).map(([filter, label]) => (

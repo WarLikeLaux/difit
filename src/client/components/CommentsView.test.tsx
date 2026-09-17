@@ -143,7 +143,7 @@ describe('CommentsView', () => {
       { wrapper },
     );
 
-    await user.click(screen.getByRole('button', { name: 'Resolved (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Closed (1)' }));
     expect(screen.getByText('First root comment')).toBeInTheDocument();
     expect(screen.getByLabelText('File not in diff')).toBeInTheDocument();
     expect(screen.getByLabelText('Resolved thread')).toBeInTheDocument();
@@ -181,7 +181,7 @@ describe('CommentsView', () => {
     expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
   });
 
-  it('opens resolved threads when they are the only available status', () => {
+  it('opens the closed group when resolved threads are the only terminal status', () => {
     const resolvedThread: CommentThread = {
       ...mockThreads[0]!,
       resolvedAt: '2026-09-11T00:00:00.000Z',
@@ -199,7 +199,7 @@ describe('CommentsView', () => {
       { wrapper },
     );
 
-    expect(screen.getByRole('button', { name: 'Resolved (1)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Closed (1)' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -372,7 +372,7 @@ describe('CommentsView', () => {
     expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
   });
 
-  it('filters open and resolved threads separately', async () => {
+  it('groups closed and resolved threads separately from open threads', async () => {
     const user = userEvent.setup();
     const resolvedThread: CommentThread = {
       ...mockThreads[1]!,
@@ -381,7 +381,19 @@ describe('CommentsView', () => {
 
     render(
       <CommentsView
-        comments={[mockThreads[0]!, resolvedThread]}
+        comments={[
+          mockThreads[0]!,
+          resolvedThread,
+          {
+            ...mockThreads[1]!,
+            id: 'closed-thread',
+            closedAt: '2026-09-11T00:01:00.000Z',
+            messages: [
+              { ...mockThreads[1]!.messages[0]!, body: 'Closed root comment' },
+              ...mockThreads[1]!.messages.slice(1),
+            ],
+          },
+        ]}
         onRemoveThread={mockRemoveThread}
         onGenerateThreadPrompt={mockGenerateThreadPrompt}
         onReplyToThread={mockReplyToThread}
@@ -395,9 +407,10 @@ describe('CommentsView', () => {
     expect(screen.getByText('First root comment')).toBeInTheDocument();
     expect(screen.queryByText('Second root comment')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Resolved (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Closed (2)' }));
     expect(screen.queryByText('First root comment')).not.toBeInTheDocument();
     expect(screen.getByText('Second root comment')).toBeInTheDocument();
+    expect(screen.getByText('Closed root comment')).toBeInTheDocument();
   });
 
   it('keeps accepted threads separate from open work', async () => {

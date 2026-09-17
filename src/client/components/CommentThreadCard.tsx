@@ -238,6 +238,7 @@ const THREAD_STATUS_ACTIONS: Record<CommentThreadStatus, readonly ThreadStatusAc
   open: [
     { status: 'accepted', label: 'Assign Agent' },
     { status: 'changes_requested', label: 'Request Changes' },
+    { status: 'closed', label: 'Close' },
   ],
   accepted: [{ status: 'open', label: 'Reopen' }],
   changes_requested: [
@@ -249,6 +250,7 @@ const THREAD_STATUS_ACTIONS: Record<CommentThreadStatus, readonly ThreadStatusAc
     { status: 'resolved', label: 'Resolve' },
     { status: 'open', label: 'Reopen' },
   ],
+  closed: [{ status: 'open', label: 'Reopen' }],
   resolved: [{ status: 'open', label: 'Reopen' }],
 };
 
@@ -258,6 +260,7 @@ const THREAD_STATUS_ACCENT_CLASSES: Record<CommentThreadStatus, string> = {
   changes_requested: 'border-orange-600/50 border-l-orange-400',
   to_verify: 'border-purple-600/50 border-l-purple-400',
   ready: 'border-green-600/50 border-l-green-400',
+  closed: 'border-github-border border-l-github-text-muted opacity-75',
   resolved: 'border-github-border border-l-github-text-muted opacity-75',
 };
 
@@ -267,6 +270,7 @@ const THREAD_STATUS_BADGE_CLASSES: Record<CommentThreadStatus, string> = {
   changes_requested: 'border-orange-500/60 text-orange-400',
   to_verify: 'border-purple-500/60 text-purple-400',
   ready: 'border-green-500/60 text-green-400',
+  closed: 'border-github-text-muted text-github-text-muted',
   resolved: 'border-github-text-muted text-github-text-muted',
 };
 
@@ -293,21 +297,24 @@ export function CommentThreadCard({
   const [reviewLineUrl, setReviewLineUrl] = useState<string>();
   const [isReplying, setIsReplying] = useState(false);
   const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(Boolean(thread.resolvedAt));
+  const isThreadClosed = Boolean(thread.closedAt || thread.resolvedAt);
+  const [isCollapsed, setIsCollapsed] = useState(isThreadClosed);
   const [repliesHiddenOverride, setRepliesHiddenOverride] = useState<boolean | null>(null);
   const [showAllReplies, setShowAllReplies] = useState(false);
   const firstLine = Array.isArray(thread.line) ? thread.line[0] : thread.line;
-  const threadStatus: CommentThreadStatus = thread.resolvedAt
-    ? 'resolved'
-    : thread.readyAt
-      ? 'ready'
-      : thread.toVerifyAt
-        ? 'to_verify'
-        : thread.changesRequestedAt
-          ? 'changes_requested'
-          : thread.acceptedAt
-            ? 'accepted'
-            : 'open';
+  const threadStatus: CommentThreadStatus = thread.closedAt
+    ? 'closed'
+    : thread.resolvedAt
+      ? 'resolved'
+      : thread.readyAt
+        ? 'ready'
+        : thread.toVerifyAt
+          ? 'to_verify'
+          : thread.changesRequestedAt
+            ? 'changes_requested'
+            : thread.acceptedAt
+              ? 'accepted'
+              : 'open';
   const repliesHidden = repliesHiddenOverride ?? hideReplies;
 
   useEffect(() => {
@@ -334,8 +341,8 @@ export function CommentThreadCard({
     : thread.line;
 
   useEffect(() => {
-    setIsCollapsed(Boolean(thread.resolvedAt));
-  }, [thread.resolvedAt]);
+    setIsCollapsed(isThreadClosed);
+  }, [isThreadClosed]);
 
   useEffect(() => {
     if (collapseRequest) {
@@ -589,7 +596,7 @@ export function CommentThreadCard({
             onResolveOrDelete={() => onRemoveThread(thread.id)}
             actionLabel="Resolve thread"
             confirmPrompt={confirmRootAction ? 'Resolve?' : undefined}
-            hideAction={Boolean(thread.resolvedAt) || Boolean(onThreadStatusChange)}
+            hideAction={isThreadClosed || Boolean(onThreadStatusChange)}
           />
 
           {replyMessages.length > 0 && (

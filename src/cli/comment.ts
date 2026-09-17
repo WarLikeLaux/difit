@@ -24,6 +24,7 @@ interface CommentThreadsResponse {
     changesRequestedAt?: string;
     toVerifyAt?: string;
     readyAt?: string;
+    closedAt?: string;
     resolvedAt?: string;
     messages: Array<{
       id: string;
@@ -92,7 +93,7 @@ async function fetchCommentOutput(port: number, format: CommentOutputFormat): Pr
   const data = (await response.json()) as CommentThreadsResponse;
   return JSON.stringify({
     ...data,
-    threads: data.threads?.filter((thread) => !thread.resolvedAt) ?? [],
+    threads: data.threads?.filter((thread) => !thread.closedAt && !thread.resolvedAt) ?? [],
   });
 }
 

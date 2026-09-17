@@ -529,6 +529,7 @@ const next = true;
       expect(result.current.threads[0]?.changesRequestedAt).toEqual(expect.any(String));
       expect(result.current.threads[0]?.toVerifyAt).toBeUndefined();
       expect(result.current.threads[0]?.readyAt).toBeUndefined();
+      expect(result.current.threads[0]?.closedAt).toBeUndefined();
 
       act(() => result.current.setThreadStatus(threadId, 'to_verify'));
 
@@ -543,6 +544,12 @@ const next = true;
       expect(result.current.threads[0]?.changesRequestedAt).toBeUndefined();
       expect(result.current.threads[0]?.toVerifyAt).toBeUndefined();
       expect(result.current.threads[0]?.readyAt).toEqual(expect.any(String));
+      expect(result.current.threads[0]?.resolvedAt).toBeUndefined();
+
+      act(() => result.current.setThreadStatus(threadId, 'closed'));
+
+      expect(result.current.threads[0]?.readyAt).toBeUndefined();
+      expect(result.current.threads[0]?.closedAt).toEqual(expect.any(String));
       expect(result.current.threads[0]?.resolvedAt).toBeUndefined();
 
       act(() => result.current.deleteThread(threadId));

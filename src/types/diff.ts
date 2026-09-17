@@ -124,6 +124,7 @@ export interface DiffCommentThread {
   changesRequestedAt?: string;
   toVerifyAt?: string;
   readyAt?: string;
+  closedAt?: string;
   resolvedAt?: string;
 
   position: DiffCommentPosition;
@@ -208,6 +209,7 @@ export interface CommentThread {
   changesRequestedAt?: string;
   toVerifyAt?: string;
   readyAt?: string;
+  closedAt?: string;
   resolvedAt?: string;
   codeContent?: string;
   isOutdated?: boolean;
@@ -221,6 +223,7 @@ export type CommentThreadStatus =
   | 'changes_requested'
   | 'to_verify'
   | 'ready'
+  | 'closed'
   | 'resolved';
 
 // Revision selector types

@@ -6,5 +6,6 @@ export const THREAD_STATUS_LABELS = {
   changes_requested: 'Changes Requested',
   to_verify: 'Verify Fix',
   ready: 'Ready',
+  closed: 'Closed',
   resolved: 'Resolved',
 } satisfies Record<CommentThreadStatus, string>;
