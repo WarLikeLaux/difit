@@ -129,6 +129,8 @@ The `difit` executable must therefore be available on the MCP server’s `PATH`.
 }
 ```
 
+Detailed setup instructions for connecting and updating Difit across **Claude Code**, **Antigravity CLI**, and **Cursor CLI** (including reviewer-only mode) are available in [docs/agents-setup.md](docs/agents-setup.md).
+
 MCP and CLI commands talk to the same authenticated local API. The CLI remains the fallback when the plugin is unavailable.
 
 In HAPI, start the viewer with `--background` from the agent session’s shell so it inherits the current session identity. The viewer can then wake that session when feedback arrives. MCP handles later review operations; it should not start the HAPI-bound viewer from a long-lived process that lacks the current session context.
