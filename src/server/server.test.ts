@@ -2081,5 +2081,16 @@ describe('Server Integration Tests', () => {
       const data2 = (await response2.json()) as any;
       expect(data2.clearComments).toBe(true);
     });
+
+    it('starts server in reviewer mode without error', async () => {
+      const { port, server } = await startServer({
+        selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
+        reviewer: true,
+      });
+      servers.push(server);
+
+      const response = await fetch(`http://localhost:${port}/api/diff`);
+      expect(response.ok).toBe(true);
+    });
   });
 });

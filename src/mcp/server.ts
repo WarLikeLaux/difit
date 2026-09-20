@@ -7,10 +7,14 @@ import { readReviewRegistrations } from '../server/review-registry.js';
 import { DifitReviewApi } from './review-api.js';
 import { startReview, type StartReviewOptions } from './start-review.js';
 
+type DifitMcpRole = 'full' | 'reviewer';
+
 interface DifitMcpDependencies {
   api?: DifitReviewApi;
   listReviews?: typeof readReviewRegistrations;
   startReview?: (options: StartReviewOptions) => Promise<unknown>;
+  role?: DifitMcpRole;
+  defaultAuthor?: string;
 }
 
 const portSchema = z.number().int().min(1).max(65_535).describe('Port of the running difit viewer');
@@ -65,6 +69,9 @@ export function createDifitMcpServer(dependencies: DifitMcpDependencies = {}): M
   const api = dependencies.api ?? new DifitReviewApi();
   const listReviews = dependencies.listReviews ?? readReviewRegistrations;
   const launchReview = dependencies.startReview ?? startReview;
+  const role: DifitMcpRole =
+    dependencies.role ?? (process.env.DIFIT_ROLE === 'reviewer' ? 'reviewer' : 'full');
+  const defaultAuthor = dependencies.defaultAuthor?.trim() || process.env.DIFIT_AUTHOR?.trim();
   const server = new McpServer({ name: 'difit', version: pkg.version });
 
   server.registerTool(
@@ -82,7 +89,8 @@ export function createDifitMcpServer(dependencies: DifitMcpDependencies = {}): M
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    (input) => runTool(() => launchReview(input)),
+    (input) =>
+      runTool(() => launchReview(role === 'reviewer' ? { ...input, reviewer: true } : input)),
   );
 
   server.registerTool(
@@ -129,32 +137,34 @@ export function createDifitMcpServer(dependencies: DifitMcpDependencies = {}): M
     ({ port, includeResolved }) => runTool(() => api.getComments(port, includeResolved)),
   );
 
-  server.registerTool(
-    'get_events',
-    {
-      title: 'Get pending agent events',
-      description:
-        'Read the durable batch of user feedback that woke the agent. Process all events before acknowledging throughSeq.',
-      inputSchema: z.object({ port: portSchema }),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-    },
-    ({ port }) => runTool(() => api.getEvents(port)),
-  );
+  if (role !== 'reviewer') {
+    server.registerTool(
+      'get_events',
+      {
+        title: 'Get pending agent events',
+        description:
+          'Read the durable batch of user feedback that woke the agent. Process all events before acknowledging throughSeq.',
+        inputSchema: z.object({ port: portSchema }),
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      },
+      ({ port }) => runTool(() => api.getEvents(port)),
+    );
 
-  server.registerTool(
-    'ack_events',
-    {
-      title: 'Acknowledge agent events',
-      description:
-        'Acknowledge a fully handled event batch through its exact throughSeq. Never call before all events are handled.',
-      inputSchema: z.object({
-        port: portSchema,
-        throughSeq: z.number().int().nonnegative(),
-      }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
-    },
-    ({ port, throughSeq }) => runTool(() => api.acknowledgeEvents(port, throughSeq)),
-  );
+    server.registerTool(
+      'ack_events',
+      {
+        title: 'Acknowledge agent events',
+        description:
+          'Acknowledge a fully handled event batch through its exact throughSeq. Never call before all events are handled.',
+        inputSchema: z.object({
+          port: portSchema,
+          throughSeq: z.number().int().nonnegative(),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+      },
+      ({ port, throughSeq }) => runTool(() => api.acknowledgeEvents(port, throughSeq)),
+    );
+  }
 
   server.registerTool(
     'add_comment',
@@ -167,56 +177,73 @@ export function createDifitMcpServer(dependencies: DifitMcpDependencies = {}): M
         side: z.enum(['old', 'new']),
         line: lineSchema,
         body: bodySchema,
+        author: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe(
+            'Author label for this comment, e.g. "Reviewer (Claude)" or "Reviewer (GPT-4o)"',
+          ),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    ({ port, filePath, side, line, body }) =>
-      runTool(() => api.addComment(port, { filePath, position: { side, line }, body })),
+    ({ port, filePath, side, line, body, author }) =>
+      runTool(() =>
+        api.addComment(port, {
+          filePath,
+          position: { side, line },
+          body,
+          author: author ?? defaultAuthor,
+        }),
+      ),
   );
 
-  server.registerTool(
-    'reply',
-    {
-      title: 'Reply to review thread',
-      description: 'Add an Agent-authored reply to an existing difit thread.',
-      inputSchema: z.object({ port: portSchema, threadId: threadIdSchema, body: bodySchema }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-    },
-    ({ port, threadId, body }) => runTool(() => api.reply(port, threadId, body)),
-  );
+  if (role !== 'reviewer') {
+    server.registerTool(
+      'reply',
+      {
+        title: 'Reply to review thread',
+        description: 'Add an Agent-authored reply to an existing difit thread.',
+        inputSchema: z.object({ port: portSchema, threadId: threadIdSchema, body: bodySchema }),
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      },
+      ({ port, threadId, body }) => runTool(() => api.reply(port, threadId, body)),
+    );
 
-  server.registerTool(
-    'edit_message',
-    {
-      title: 'Edit review message',
-      description: 'Replace the body of an existing difit message.',
-      inputSchema: z.object({
-        port: portSchema,
-        threadId: threadIdSchema,
-        messageId: z.string().min(1),
-        body: bodySchema,
-      }),
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
-    },
-    ({ port, threadId, messageId, body }) =>
-      runTool(() => api.editMessage(port, threadId, messageId, body)),
-  );
+    server.registerTool(
+      'edit_message',
+      {
+        title: 'Edit review message',
+        description: 'Replace the body of an existing difit message.',
+        inputSchema: z.object({
+          port: portSchema,
+          threadId: threadIdSchema,
+          messageId: z.string().min(1),
+          body: bodySchema,
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+      },
+      ({ port, threadId, messageId, body }) =>
+        runTool(() => api.editMessage(port, threadId, messageId, body)),
+    );
 
-  server.registerTool(
-    'set_thread_status',
-    {
-      title: 'Set agent-managed review status',
-      description:
-        'Set open after a failed verification, or ready only after implementing an Assign Agent request with tests or successfully handling Verify Fix. Never edit code for an Open thread or a Changes Requested thread. Replies and acknowledgements alone never change status. Assign Agent, Request Changes, Verify Fix, and Resolve belong to the user.',
-      inputSchema: z.object({
-        port: portSchema,
-        threadId: threadIdSchema,
-        status: z.enum(['open', 'ready']),
-      }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-    },
-    ({ port, threadId, status }) => runTool(() => api.setThreadStatus(port, threadId, status)),
-  );
+    server.registerTool(
+      'set_thread_status',
+      {
+        title: 'Set agent-managed review status',
+        description:
+          'Set open after a failed verification, or ready only after implementing an Assign Agent request with tests or successfully handling Verify Fix. Never edit code for an Open thread or a Changes Requested thread. Replies and acknowledgements alone never change status. Assign Agent, Request Changes, Verify Fix, and Resolve belong to the user.',
+        inputSchema: z.object({
+          port: portSchema,
+          threadId: threadIdSchema,
+          status: z.enum(['open', 'ready']),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+      },
+      ({ port, threadId, status }) => runTool(() => api.setThreadStatus(port, threadId, status)),
+    );
+  }
 
   return server;
 }

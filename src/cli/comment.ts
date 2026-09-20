@@ -480,17 +480,25 @@ export function createCommentCommand(): Command {
     .description('Add comments to a running difit server')
     .argument('[json]', 'comment import JSON (object or array)')
     .requiredOption('--port <port>', 'port of the running difit server', parseInt)
-    .action(async (json: string | undefined, opts: { port: number }) => {
+    .option('--author <author>', 'default author for comments that do not specify one')
+    .action(async (json: string | undefined, opts: { port: number; author?: string }) => {
       try {
         const input = await parseCommentAddInput(json);
         const imports = parseCommentImportValue(input);
+        const author = opts.author?.trim() || process.env.DIFIT_AUTHOR?.trim();
+        const resolvedImports = author
+          ? imports.map((item) => ({
+              ...item,
+              author: item.author?.trim() || author,
+            }))
+          : imports;
 
         const response = await authenticatedFetch(
           `http://localhost:${opts.port}/api/comment-imports`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(imports),
+            body: JSON.stringify(resolvedImports),
           },
         );
 

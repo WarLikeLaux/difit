@@ -88,6 +88,8 @@ export interface ServerOptions {
   includeUntracked?: boolean;
   reviewUrl?: string;
   authService?: AuthService;
+  reviewer?: boolean;
+  noWake?: boolean;
 }
 
 const GENERATED_STATUS_CACHE_TTL_MS = 60_000;
@@ -1424,9 +1426,16 @@ export async function startServer(options: ServerOptions): Promise<{
     !options.host || options.host === 'localhost' ? '127.0.0.1' : options.host,
   );
 
-  const hapiSessionId = process.env.VITEST ? undefined : process.env.HAPI_SESSION_ID?.trim();
+  const isReviewer = Boolean(
+    options.reviewer ||
+    options.noWake ||
+    process.env.DIFIT_ROLE === 'reviewer' ||
+    process.env.DIFIT_NO_WAKE === '1',
+  );
+  const hapiSessionId =
+    process.env.VITEST || isReviewer ? undefined : process.env.HAPI_SESSION_ID?.trim();
   if (reviewContext) {
-    await registerReview(reviewContext, port, process.pid, hapiSessionId);
+    const registration = await registerReview(reviewContext, port, process.pid, hapiSessionId);
     const baseCommitish =
       initialDiffData.baseCommitish ?? (options.stdinDiff ? 'stdin' : undefined);
     const targetCommitish =
@@ -1455,7 +1464,7 @@ export async function startServer(options: ServerOptions): Promise<{
       agentEventInbox = new AgentEventInbox({
         reviewId: reviewContext.id,
         port,
-        hapiSessionId: process.env.VITEST ? undefined : process.env.HAPI_SESSION_ID,
+        hapiSessionId: registration.hapiSessionId,
       });
       await agentEventInbox.initialize();
       server.on('close', () => agentEventInbox?.dispose());

@@ -61,7 +61,7 @@ export class DifitReviewApi {
 
   async addComment(
     port: number,
-    input: { filePath: string; position: DiffCommentPosition; body: string },
+    input: { filePath: string; position: DiffCommentPosition; body: string; author?: string },
   ): Promise<unknown> {
     const threadId = createId();
     const result = await this.#request(port, '/api/comment-imports', {
@@ -74,7 +74,7 @@ export class DifitReviewApi {
           filePath: input.filePath,
           position: input.position,
           body: input.body,
-          author: 'Agent',
+          author: input.author?.trim() || 'Agent',
         },
       ]),
     });

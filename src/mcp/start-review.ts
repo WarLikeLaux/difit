@@ -16,6 +16,7 @@ export interface StartReviewOptions {
   base?: string;
   includeUntracked?: boolean;
   mergeBase?: boolean;
+  reviewer?: boolean;
 }
 
 export async function startReview(
@@ -28,6 +29,7 @@ export async function startReview(
   if (options.base) args.push(options.base);
   if (options.includeUntracked) args.push('--include-untracked');
   if (options.mergeBase) args.push('--merge-base');
+  if (options.reviewer) args.push('--reviewer');
   args.push('--background');
 
   const child = spawnProcess(process.execPath, args, {

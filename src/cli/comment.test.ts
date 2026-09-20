@@ -48,6 +48,11 @@ describe('createCommentCommand', () => {
       expect(args[0].name()).toBe('json');
       expect(args[0].required).toBe(false);
     });
+
+    it('accepts --author option', () => {
+      const authorOption = addCommand.options.find((o) => o.long === '--author');
+      expect(authorOption).toBeDefined();
+    });
   });
 
   describe('get subcommand', () => {

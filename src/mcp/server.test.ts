@@ -139,4 +139,85 @@ describe('difit MCP server', () => {
     expect(result.isError).toBe(true);
     expect(result.content).toEqual([{ type: 'text', text: 'Thread not found' }]);
   });
+
+  it('exposes only review tools in reviewer role', async () => {
+    const launchReview = vi.fn(async () => ({
+      port: 4966,
+      url: 'https://difit.example/reviews/review-1/',
+      pid: 123,
+    }));
+    const client = await connect({ role: 'reviewer', startReview: launchReview });
+    const tools = await client.listTools();
+    const toolNames = tools.tools.map((tool) => tool.name);
+    expect(toolNames).toEqual([
+      'start_review',
+      'list_reviews',
+      'get_review_context',
+      'get_comments',
+      'add_comment',
+    ]);
+    expect(toolNames).not.toContain('reply');
+    expect(toolNames).not.toContain('edit_message');
+    expect(toolNames).not.toContain('set_thread_status');
+    expect(toolNames).not.toContain('get_events');
+    expect(toolNames).not.toContain('ack_events');
+
+    await client.callTool({
+      name: 'start_review',
+      arguments: { repositoryPath: '/repo', target: '.' },
+    });
+    expect(launchReview).toHaveBeenCalledWith(
+      expect.objectContaining({ repositoryPath: '/repo', target: '.', reviewer: true }),
+    );
+  });
+
+  it('supports custom author and defaultAuthor in add_comment', async () => {
+    let capturedBody: unknown;
+    const fetcher = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body));
+      return Response.json({ success: true, count: 1 });
+    });
+    const client = await connect({
+      role: 'reviewer',
+      defaultAuthor: 'Reviewer (Default)',
+      api: new DifitReviewApi(fetcher),
+    });
+
+    await client.callTool({
+      name: 'add_comment',
+      arguments: {
+        port: 4966,
+        filePath: 'src/app.ts',
+        side: 'new',
+        line: 10,
+        body: 'Default author comment',
+      },
+    });
+    expect(capturedBody).toEqual([
+      expect.objectContaining({
+        filePath: 'src/app.ts',
+        body: 'Default author comment',
+        author: 'Reviewer (Default)',
+      }),
+    ]);
+
+    await client.callTool({
+      name: 'add_comment',
+      arguments: {
+        port: 4966,
+        filePath: 'src/app.ts',
+        side: 'new',
+        line: 15,
+        body: 'Explicit author comment',
+        author: 'Reviewer (Claude 3.7)',
+      },
+    });
+    expect(capturedBody).toEqual([
+      expect.objectContaining({
+        filePath: 'src/app.ts',
+        body: 'Explicit author comment',
+        author: 'Reviewer (Claude 3.7)',
+      }),
+    ]);
+  });
 });

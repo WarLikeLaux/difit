@@ -97,6 +97,9 @@ interface CliOptions {
   background?: boolean;
   context?: number;
   mergeBase?: boolean;
+  reviewer?: boolean;
+  noWake?: boolean;
+  author?: string;
 }
 
 const program = new Command();
@@ -140,6 +143,9 @@ program
     '--merge-base',
     'resolve the base revision with git merge-base before diffing (Git revision mode only)',
   )
+  .option('--reviewer', 'run in reviewer mode: do not bind HAPI session as wake target')
+  .option('--no-wake', 'do not attach or ping HAPI session when comments are added')
+  .option('--author <author>', 'default author label for injected review comments')
   .action(async (commitish: string, compareWith: string | undefined, options: CliOptions) => {
     try {
       const isBackgroundChild = process.env[BACKGROUND_CHILD_ENV] === '1';
@@ -164,6 +170,13 @@ program
 
       try {
         manualCommentImports = parseCommentOptions(options.comment);
+        const defaultAuthor = options.author?.trim() || process.env.DIFIT_AUTHOR?.trim();
+        if (defaultAuthor) {
+          manualCommentImports = manualCommentImports.map((item) => ({
+            ...item,
+            author: item.author?.trim() || defaultAuthor,
+          }));
+        }
         commentImports = manualCommentImports;
       } catch (error) {
         console.error(
@@ -246,6 +259,8 @@ program
           openBrowser: options.open,
           clearComments: options.clean,
           keepAlive: options.keepAlive,
+          reviewer: options.reviewer,
+          noWake: options.noWake,
           ...(commentImports.length > 0 ? { commentImports } : {}),
         });
 
@@ -323,6 +338,8 @@ program
         diffMode: determineDiffMode(selection, compareWith),
         repoPath,
         reviewUrl,
+        reviewer: options.reviewer,
+        noWake: options.noWake,
         ...(commentImports.length > 0 ? { commentImports } : {}),
       });
 
