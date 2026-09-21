@@ -1930,6 +1930,18 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
           </div>
         </header>
         {reviewSwitcher}
+        {diffData.reviewOffline && (
+          <div
+            role="alert"
+            className="border-b border-amber-500 bg-amber-950/40 px-4 py-3 text-sm text-amber-200"
+          >
+            This review is offline. You are viewing a saved snapshot
+            {diffData.reviewSnapshotAt
+              ? ` from ${new Date(diffData.reviewSnapshotAt).toLocaleString()}`
+              : ''}
+            . Changes on disk will not appear until the review process reconnects.
+          </div>
+        )}
         {diffData.reviewStale && (
           <div
             role="alert"

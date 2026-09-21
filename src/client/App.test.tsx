@@ -940,6 +940,20 @@ describe('App Component - Comment sync', () => {
 });
 
 describe('App Component - Diff Mode Persistence', () => {
+  it('warns when an offline review is showing a saved snapshot', async () => {
+    mockFetch({
+      ...mockDiffResponse,
+      reviewOffline: true,
+      reviewSnapshotAt: '2026-09-21T17:03:59.322Z',
+    });
+
+    renderApp();
+
+    expect(
+      await screen.findByText(/This review is offline\. You are viewing a saved snapshot/),
+    ).toBeInTheDocument();
+  });
+
   it('initializes the selected view mode from localStorage', async () => {
     mockFetch(mockDiffResponse);
     window.localStorage.setItem('difit.diffViewMode', 'unified');

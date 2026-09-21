@@ -106,7 +106,8 @@ describe('useFileWatch', () => {
     });
 
     it('should handle connection events', async () => {
-      const { result } = renderHook(() => useFileWatch());
+      const onReload = vi.fn().mockResolvedValue(undefined);
+      const { result } = renderHook(() => useFileWatch(onReload));
 
       await waitFor(() => {
         expect(result.current.isConnected).toBe(true);
@@ -131,6 +132,7 @@ describe('useFileWatch', () => {
         expect(result.current.watchState.isWatchEnabled).toBe(true);
         expect(result.current.watchState.diffMode).toBe(DiffMode.WORKING);
       });
+      expect(onReload).toHaveBeenCalledTimes(1);
     });
 
     it('should handle reload events', async () => {

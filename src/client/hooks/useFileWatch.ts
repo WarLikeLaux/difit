@@ -73,6 +73,9 @@ export function useFileWatch(
                 diffMode: data.diffMode,
                 connectionStatus: 'connected',
               }));
+              if (onReloadRef.current) {
+                autoReloadRef.current();
+              }
               break;
 
             case 'reload':

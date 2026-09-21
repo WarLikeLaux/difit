@@ -31,7 +31,11 @@ import {
   readReviewRegistrations,
   type ReviewRegistration,
 } from './review-registry.js';
-import { deleteReviewSnapshot, readReviewSnapshot } from './review-snapshot.js';
+import {
+  deleteReviewSnapshot,
+  readReviewSnapshot,
+  readStoredReviewSnapshot,
+} from './review-snapshot.js';
 import {
   restrictCrossSiteBrowserRequests,
   restrictRequestHosts,
@@ -542,14 +546,21 @@ export async function startHubServer(
     }
 
     const requestPath = req.url.split('?')[0] ?? '/';
-    const snapshot = await readReviewSnapshot(registration.id);
-    if (!snapshot) {
+    const storedSnapshot = await readStoredReviewSnapshot(registration.id);
+    if (!storedSnapshot) {
       res.status(503).send('This review has no saved snapshot yet. Reattach an agent once.');
       return;
     }
+    const snapshot = storedSnapshot.diff;
 
     if (req.method === 'GET' && requestPath === '/api/diff') {
-      res.json({ ...snapshot, openInEditorAvailable: false, reviewStale: false });
+      res.json({
+        ...snapshot,
+        openInEditorAvailable: false,
+        reviewStale: false,
+        reviewOffline: true,
+        reviewSnapshotAt: storedSnapshot.capturedAt,
+      });
       return;
     }
     if (req.method === 'GET' && requestPath === '/api/comments-json') {

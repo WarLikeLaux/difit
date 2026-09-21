@@ -63,6 +63,8 @@ export interface DiffResponse {
   reviewId?: string;
   reviewBranch?: string;
   reviewStale?: boolean;
+  reviewOffline?: boolean;
+  reviewSnapshotAt?: string;
   currentBranch?: string;
   commentImports?: CommentImport[];
   commentImportId?: string;

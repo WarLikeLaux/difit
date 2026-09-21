@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   deleteReviewSnapshot,
   readReviewSnapshot,
+  readStoredReviewSnapshot,
   writeReviewSnapshot,
 } from './review-snapshot.js';
 
@@ -35,6 +36,11 @@ describe('review snapshots', () => {
     await expect(readReviewSnapshot('review-1')).resolves.toMatchObject({
       commit: 'abc1234',
       reviewId: 'review-1',
+    });
+    await expect(readStoredReviewSnapshot('review-1')).resolves.toMatchObject({
+      reviewId: 'review-1',
+      capturedAt: expect.any(String),
+      diff: { commit: 'abc1234' },
     });
 
     await deleteReviewSnapshot('review-1');

@@ -99,6 +99,10 @@ function createDiffCacheKey(selection: DiffSelection, ignoreWhitespace: boolean)
   return `${getDiffSelectionKey(selection)}\u0000${ignoreWhitespace ? '1' : '0'}`;
 }
 
+function isMutableDiffSelection(selection: DiffSelection): boolean {
+  return ['.', 'working', 'staged'].includes(selection.targetCommitish);
+}
+
 function getCachedDiffResponse(
   cache: Map<string, DiffResponse>,
   key: string,
@@ -260,11 +264,13 @@ export async function startServer(options: ServerOptions): Promise<{
       initialIgnoreWhitespace,
       options.contextLines,
     );
-    setCachedDiffResponse(
-      diffDataCache,
-      createDiffCacheKey(initialSelection, initialIgnoreWhitespace),
-      initialDiffData,
-    );
+    if (!isMutableDiffSelection(initialSelection)) {
+      setCachedDiffResponse(
+        diffDataCache,
+        createDiffCacheKey(initialSelection, initialIgnoreWhitespace),
+        initialDiffData,
+      );
+    }
   }
 
   // Function to invalidate cache when file changes are detected
@@ -447,7 +453,8 @@ export async function startServer(options: ServerOptions): Promise<{
     let responseDiffData = initialDiffData;
     if (!options.stdinDiff && !branchState.stale) {
       const cacheKey = createDiffCacheKey(requestedSelection, ignoreWhitespace);
-      const cached = getCachedDiffResponse(diffDataCache, cacheKey);
+      const mutableSelection = isMutableDiffSelection(requestedSelection);
+      const cached = mutableSelection ? undefined : getCachedDiffResponse(diffDataCache, cacheKey);
       if (cached) {
         responseDiffData = cached;
       } else {
@@ -464,7 +471,9 @@ export async function startServer(options: ServerOptions): Promise<{
           });
           return;
         }
-        setCachedDiffResponse(diffDataCache, cacheKey, responseDiffData);
+        if (!mutableSelection) {
+          setCachedDiffResponse(diffDataCache, cacheKey, responseDiffData);
+        }
         generatedStatusCache.clear();
       }
     }

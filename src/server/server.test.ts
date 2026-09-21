@@ -795,6 +795,28 @@ describe('Server Integration Tests', () => {
       );
     });
 
+    it('GET /api/diff always recalculates mutable working-tree selections', async () => {
+      const result = await startServer({
+        selection: { targetCommitish: '.', baseCommitish: 'HEAD' },
+        preferredPort: 9034,
+      });
+      servers.push(result.server);
+
+      const parser = parserInstances.at(-1);
+      parser?.parseDiff.mockClear();
+
+      const firstResponse = await fetch(
+        `http://localhost:${result.port}/api/diff?base=HEAD&target=.`,
+      );
+      const secondResponse = await fetch(
+        `http://localhost:${result.port}/api/diff?base=HEAD&target=.`,
+      );
+
+      expect(firstResponse.ok).toBe(true);
+      expect(secondResponse.ok).toBe(true);
+      expect(parser?.parseDiff).toHaveBeenCalledTimes(2);
+    });
+
     it('GET /api/diff evicts least recently used cached diff responses', async () => {
       const result = await startServer({
         selection: { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },

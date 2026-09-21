@@ -6,7 +6,7 @@ import type { DiffResponse } from '../types/diff.js';
 
 import { ensurePrivateDirectory, writePrivateFile } from './private-storage.js';
 
-interface StoredReviewSnapshot {
+export interface StoredReviewSnapshot {
   version: 1;
   reviewId: string;
   capturedAt: string;
@@ -50,10 +50,17 @@ export async function writeReviewSnapshot(reviewId: string, diff: DiffResponse):
 }
 
 export async function readReviewSnapshot(reviewId: string): Promise<DiffResponse | undefined> {
+  const snapshot = await readStoredReviewSnapshot(reviewId);
+  return snapshot?.diff;
+}
+
+export async function readStoredReviewSnapshot(
+  reviewId: string,
+): Promise<StoredReviewSnapshot | undefined> {
   try {
     const parsed: unknown = JSON.parse(await fs.readFile(getSnapshotPath(reviewId), 'utf8'));
     return isStoredReviewSnapshot(parsed) && parsed.reviewId === reviewId
-      ? structuredClone(parsed.diff)
+      ? structuredClone(parsed)
       : undefined;
   } catch {
     return undefined;

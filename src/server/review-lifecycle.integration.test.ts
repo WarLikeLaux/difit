@@ -253,6 +253,8 @@ describe('branch review lifecycle', () => {
       reviewId: context.id,
       reviewBranch: 'feature/one',
       openInEditorAvailable: false,
+      reviewOffline: true,
+      reviewSnapshotAt: expect.any(String),
     });
 
     const comments = (await (
