@@ -1082,8 +1082,8 @@ export async function startServer(options: ServerOptions): Promise<{
           }
         : thread,
     );
-
-    await updateCommentSession(selection, nextThreads);
+    const principal = getAuthenticatedPrincipal(res.locals as Record<string, unknown>);
+    await updateCommentSession(selection, nextThreads, principal.kind !== 'cli');
 
     res.json({
       success: true,

@@ -17,6 +17,7 @@ The TypeScript sources live under `src`, split by runtime: `src/cli` handles com
 - `pnpm install` — install workspace dependencies (Node ≥21; use `mise` to stay aligned).
 - `pnpm dev` — run the local development loop (boots the CLI server and UI with hot reload).
 - `pnpm build` — generate the CLI bundle and production web assets via TypeScript project references and Vite.
+- `pnpm deploy` / `pnpm deploy:quick` — build locally and reload/restart difit-hub and any active background review servers.
 - `pnpm test` / `pnpm test:watch` — execute the Vitest suite once or in watch mode.
 - `pnpm check`, `pnpm check:fix`, and `pnpm format` — apply oxlint type-aware checks and oxfmt formatting before you commit.
 

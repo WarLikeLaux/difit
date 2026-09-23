@@ -79,6 +79,34 @@ describe('findAgentReviewEvents', () => {
       ),
     ).toEqual([]);
   });
+
+  it('ignores messages and status transitions in closed or resolved threads', () => {
+    const existing = message('message-1', 'before');
+    const added = message('message-2', 'new');
+    expect(
+      findAgentReviewEvents(
+        [thread([existing])],
+        [
+          {
+            ...thread([existing, added]),
+            closedAt: '2026-09-13T10:05:00.000Z',
+          },
+        ],
+      ),
+    ).toEqual([]);
+
+    expect(
+      findAgentReviewEvents(
+        [thread([existing])],
+        [
+          {
+            ...thread([existing, added], { acceptedAt: '2026-09-13T10:05:00.000Z' }),
+            resolvedAt: '2026-09-13T10:05:00.000Z',
+          },
+        ],
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe('AgentEventInbox', () => {
@@ -207,6 +235,118 @@ describe('AgentEventInbox', () => {
       'difit-wake:review-1:4966:1',
       'difit-wake:review-1:4966:1',
     ]);
+    inbox.dispose();
+  });
+
+  it('resets debounce window when new comments are added so multiple comments are batched', async () => {
+    vi.useFakeTimers();
+    const directory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-'));
+    temporaryDirectories.push(directory);
+    const sendWake = vi.fn(async () => undefined);
+    const inbox = new AgentEventInbox({
+      reviewId: 'review-1',
+      port: 4966,
+      hapiSessionId: 'hapi-session',
+      configDirectory: directory,
+      debounceMs: 100,
+      sendWake,
+    });
+    await inbox.initialize();
+
+    // User writes comment 1
+    await inbox.recordChanges([], [thread([message('message-1', 'first')])]);
+    // 60ms pass (less than debounceMs 100)
+    await vi.advanceTimersByTimeAsync(60);
+    expect(sendWake).not.toHaveBeenCalled();
+
+    // User writes comment 2 -> should reset debounce timer for another 100ms
+    await inbox.recordChanges(
+      [thread([message('message-1', 'first')])],
+      [thread([message('message-1', 'first'), message('message-2', 'second')])],
+    );
+
+    // Another 60ms pass (120ms since comment 1, but only 60ms since comment 2)
+    await vi.advanceTimersByTimeAsync(60);
+    expect(sendWake).not.toHaveBeenCalled();
+
+    // Another 40ms pass (100ms since comment 2) -> timer fires
+    await vi.advanceTimersByTimeAsync(40);
+    await inbox.flush();
+    expect(sendWake).toHaveBeenCalledTimes(1);
+
+    const batch = await inbox.getBatch();
+    expect(batch.events).toHaveLength(2);
+    expect(batch.events.map((e) => e.seq)).toEqual([1, 2]);
+    inbox.dispose();
+  });
+
+  it('prunes pending events and cancels scheduled wake when a thread is closed', async () => {
+    vi.useFakeTimers();
+    const directory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-'));
+    temporaryDirectories.push(directory);
+    const sendWake = vi.fn(async () => undefined);
+    const inbox = new AgentEventInbox({
+      reviewId: 'review-1',
+      port: 4966,
+      hapiSessionId: 'hapi-session',
+      configDirectory: directory,
+      debounceMs: 100,
+      sendWake,
+    });
+    await inbox.initialize();
+
+    const openThread = thread([message('message-1', 'need fix')]);
+    await inbox.recordChanges([], [openThread]);
+    expect((await inbox.getBatch()).events).toHaveLength(1);
+
+    // User closes the thread before the debounce timer fires
+    await vi.advanceTimersByTimeAsync(30);
+    const closedThread = { ...openThread, closedAt: '2026-09-13T10:05:00.000Z' };
+    await inbox.recordChanges([openThread], [closedThread]);
+
+    // Timer window expires
+    await vi.advanceTimersByTimeAsync(200);
+    await inbox.flush();
+
+    // No wake should have been sent, and inbox should be empty
+    expect(sendWake).not.toHaveBeenCalled();
+    expect((await inbox.getBatch()).events).toHaveLength(0);
+    inbox.dispose();
+  });
+
+  it('prunes closed thread events while preserving open thread events', async () => {
+    vi.useFakeTimers();
+    const directory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-'));
+    temporaryDirectories.push(directory);
+    const sendWake = vi.fn(async () => undefined);
+    const inbox = new AgentEventInbox({
+      reviewId: 'review-1',
+      port: 4966,
+      hapiSessionId: 'hapi-session',
+      configDirectory: directory,
+      debounceMs: 100,
+      sendWake,
+    });
+    await inbox.initialize();
+
+    const thread1 = { ...thread([message('m-1', 'comment 1')]), id: 't-1' };
+    const thread2 = { ...thread([message('m-2', 'comment 2')]), id: 't-2' };
+    await inbox.recordChanges([], [thread1, thread2]);
+    expect((await inbox.getBatch()).events).toHaveLength(2);
+
+    // User closes thread 1
+    const closedThread1 = { ...thread1, closedAt: '2026-09-13T10:05:00.000Z' };
+    await inbox.recordChanges([thread1, thread2], [closedThread1, thread2]);
+
+    // Wait for debounce timer to fire
+    await vi.advanceTimersByTimeAsync(150);
+    await inbox.flush();
+
+    // Wake should be sent containing only thread 2
+    expect(sendWake).toHaveBeenCalledTimes(1);
+    const batch = await inbox.getBatch();
+    expect(batch.events).toHaveLength(1);
+    expect(batch.events[0]).toMatchObject({ threadId: 't-2' });
     inbox.dispose();
   });
 });

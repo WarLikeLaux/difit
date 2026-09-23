@@ -64,7 +64,16 @@ interface AgentEventInboxOptions {
   sendWake?: (sessionId: string, message: string, localId: string) => Promise<void>;
 }
 
-const DEFAULT_DEBOUNCE_MS = 500;
+function defaultDebounceMs(): number {
+  const configured = process.env.DIFIT_AGENT_DEBOUNCE_MS?.trim();
+  if (configured) {
+    const parsed = Number(configured);
+    if (!Number.isNaN(parsed) && parsed >= 0) return parsed;
+  }
+  return 60_000;
+}
+
+const DEFAULT_DEBOUNCE_MS = defaultDebounceMs();
 const DEFAULT_RETRY_MS = 5 * 60 * 1_000;
 
 function defaultConfigDirectory(): string {
@@ -108,6 +117,10 @@ export function findAgentReviewEvents(
 
   const events: PendingAgentReviewEvent[] = [];
   for (const thread of nextThreads) {
+    if (thread.closedAt || thread.resolvedAt) {
+      continue;
+    }
+
     for (const message of thread.messages) {
       if (message.author?.trim() !== 'User') continue;
       if (previousMessages.get(messageIdentity(thread.id, message.id)) === message.updatedAt) {
@@ -188,6 +201,22 @@ export async function deleteAgentEventInbox(
   await fs.rm(join(configDirectory, 'agent-events', `${reviewId}.json`), { force: true });
 }
 
+function getEventTimestamp(event: AgentReviewEvent): number {
+  if (event.type === 'userMessage') {
+    const time = new Date(event.message.updatedAt || event.message.createdAt).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+  if (event.type === 'accepted') {
+    const time = new Date(event.acceptedAt).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+  if (event.type === 'toVerify') {
+    const time = new Date(event.toVerifyAt).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+  return 0;
+}
+
 export class AgentEventInbox {
   readonly #reviewId: string;
   readonly #port: number;
@@ -229,7 +258,14 @@ export class AgentEventInbox {
       this.#state.wakeOutstanding = false;
       delete this.#state.wakeSentAt;
       await this.#persist();
-      this.#scheduleWake();
+      const latestEventTime = Math.max(...this.#state.events.map(getEventTimestamp));
+      const elapsed =
+        Number.isFinite(latestEventTime) && latestEventTime > 0
+          ? Date.now() - latestEventTime
+          : this.#debounceMs;
+      const remainingDelay = Math.max(0, this.#debounceMs - elapsed);
+      const delay = remainingDelay > 0 ? remainingDelay : Math.min(500, this.#debounceMs);
+      this.#scheduleWake(delay);
     }
   }
 
@@ -238,14 +274,46 @@ export class AgentEventInbox {
     nextThreads: DiffCommentThread[],
   ): Promise<void> {
     const events = findAgentReviewEvents(previousThreads, nextThreads);
-    if (events.length === 0) return;
 
     await this.#serialize(async () => {
+      const activeThreadIds = new Set(
+        nextThreads
+          .filter((thread) => !thread.closedAt && !thread.resolvedAt)
+          .map((thread) => thread.id),
+      );
+
+      const hadPrunedEvents = this.#state.events.some(
+        (event) => !activeThreadIds.has(event.threadId),
+      );
+      if (hadPrunedEvents) {
+        this.#state.events = this.#state.events.filter((event) =>
+          activeThreadIds.has(event.threadId),
+        );
+      }
+
       for (const event of events) {
         this.#state.events.push({ ...event, seq: this.#state.nextSeq++ } as AgentReviewEvent);
       }
+
+      if (events.length === 0 && !hadPrunedEvents) {
+        return;
+      }
+
       await this.#persist();
-      if (!this.#state.wakeOutstanding) this.#scheduleWake();
+
+      if (this.#state.events.length === 0) {
+        this.#clearWakeTimer();
+        this.#state.wakeOutstanding = false;
+        delete this.#state.wakeSentAt;
+        if (hadPrunedEvents) {
+          await this.#persist();
+        }
+        return;
+      }
+
+      if (events.length > 0 && !this.#state.wakeOutstanding) {
+        this.#scheduleWake(this.#debounceMs, false, true);
+      }
     });
   }
 
@@ -280,7 +348,16 @@ export class AgentEventInbox {
       await this.#persist();
 
       this.#clearWakeTimer();
-      if (this.#state.events.length > 0) this.#scheduleWake();
+      if (this.#state.events.length > 0) {
+        const latestEventTime = Math.max(...this.#state.events.map(getEventTimestamp));
+        const elapsed =
+          Number.isFinite(latestEventTime) && latestEventTime > 0
+            ? Date.now() - latestEventTime
+            : this.#debounceMs;
+        const remainingDelay = Math.max(0, this.#debounceMs - elapsed);
+        const delay = remainingDelay > 0 ? remainingDelay : Math.min(500, this.#debounceMs);
+        this.#scheduleWake(delay);
+      }
 
       return {
         success: true,
@@ -308,8 +385,16 @@ export class AgentEventInbox {
     return result;
   }
 
-  #scheduleWake(delay = this.#debounceMs, retryOutstanding = false): void {
-    if (this.#disposed || !this.#hapiSessionId || this.#wakeTimer) return;
+  #scheduleWake(delay = this.#debounceMs, retryOutstanding = false, resetExisting = false): void {
+    if (this.#disposed || !this.#hapiSessionId) return;
+    if (this.#wakeTimer) {
+      if (resetExisting) {
+        clearTimeout(this.#wakeTimer);
+        this.#wakeTimer = undefined;
+      } else {
+        return;
+      }
+    }
     this.#wakeTimer = setTimeout(() => {
       this.#wakeTimer = undefined;
       void this.#serialize(() => this.#deliverWake(retryOutstanding));

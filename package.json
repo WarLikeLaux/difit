@@ -45,6 +45,8 @@
     "build": "pnpm run build:cli && vite build",
     "build:site": "pnpm run build:cli && GITHUB_PAGES=true vite build --config vite.config.site.ts",
     "build:cli": "tsc --project tsconfig.cli.json",
+    "deploy": "bash scripts/deploy-local.sh",
+    "deploy:quick": "bash scripts/deploy-local.sh --skip-checks",
     "export:site-data": "node scripts/export-site-data.js",
     "package:vscode": "pnpm -C packages/vscode run package",
     "start": "pnpm run build && node dist/cli/index.js",
