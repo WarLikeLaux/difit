@@ -137,7 +137,7 @@ export async function startBackgroundProcess(spawnProcess: typeof spawn = spawn)
         child.stderr?.destroy();
         reject(new Error('Timed out while starting background difit server'));
       });
-    }, 10_000);
+    }, 30_000);
 
     child.stderr?.on('data', onStderr);
     child.on('message', onMessage);

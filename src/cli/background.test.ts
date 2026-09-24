@@ -122,7 +122,7 @@ describe('background process lifecycle', () => {
     const rejection = expect(result).rejects.toThrow(
       'Timed out while starting background difit server',
     );
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(30_000);
     await rejection;
 
     expect(child.kill).toHaveBeenCalledOnce();

@@ -97,7 +97,7 @@ function waitForHandshake(child: ChildProcess): Promise<BackgroundServerInfo> {
         releaseBackgroundChild(child);
         reject(new Error('Timed out while starting background difit server'));
       });
-    }, 15_000);
+    }, 30_000);
 
     child.stderr?.on('data', onStderr);
     child.on('message', onMessage);
