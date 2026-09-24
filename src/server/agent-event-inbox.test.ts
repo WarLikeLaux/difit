@@ -60,13 +60,42 @@ describe('findAgentReviewEvents', () => {
         ],
       ),
     ).toEqual([
-      expect.objectContaining({ type: 'userMessage', message: edited }),
-      expect.objectContaining({ type: 'userMessage', message: added }),
+      expect.objectContaining({ type: 'userMessage', message: edited, threadStatus: 'to_verify' }),
+      expect.objectContaining({ type: 'userMessage', message: added, threadStatus: 'to_verify' }),
       expect.objectContaining({
         type: 'accepted',
         acceptedAt: '2026-09-13T10:01:30.000Z',
+        threadStatus: 'to_verify',
       }),
-      expect.objectContaining({ type: 'toVerify', toVerifyAt: '2026-09-13T10:02:00.000Z' }),
+      expect.objectContaining({
+        type: 'toVerify',
+        toVerifyAt: '2026-09-13T10:02:00.000Z',
+        threadStatus: 'to_verify',
+      }),
+    ]);
+  });
+
+  it('attaches the thread workflow status so agents can tell tasks from questions', () => {
+    const openThread = thread([message('message-1', 'a question')]);
+
+    const assignedThread = thread([message('message-2', 'a task')], {
+      acceptedAt: '2026-09-13T10:05:00.000Z',
+    });
+    const readyThread = {
+      ...thread([message('message-3', 'follow-up on finished work')], {
+        acceptedAt: '2026-09-13T10:05:00.000Z',
+      }),
+      readyAt: '2026-09-13T10:06:00.000Z',
+    };
+
+    const events = findAgentReviewEvents([], [openThread, assignedThread, readyThread]);
+
+    expect(events.map((event) => [event.type, event.threadStatus])).toEqual([
+      ['userMessage', 'open'],
+      ['userMessage', 'accepted'],
+      ['accepted', 'accepted'],
+      ['userMessage', 'ready'],
+      ['accepted', 'ready'],
     ]);
   });
 

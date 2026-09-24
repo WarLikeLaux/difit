@@ -143,7 +143,12 @@ export function createDifitMcpServer(dependencies: DifitMcpDependencies = {}): M
       {
         title: 'Get pending agent events',
         description:
-          'Read the durable batch of user feedback that woke the agent. Process all events before acknowledging throughSeq.',
+          'Read the durable batch of user feedback that woke the agent. Event semantics: ' +
+          'type "accepted" = the user assigned the thread to you (Assign Agent): implement the request with tests, then set_thread_status "ready". ' +
+          'type "userMessage" with threadStatus "accepted" or "ready" is follow-up input for work already assigned to you: address it, then set "ready" again if you changed code. ' +
+          'type "userMessage" with threadStatus "open" is a question or remark: reply, and never edit code for it. ' +
+          'type "toVerify" = the user asked you to verify a fix: run the checks, then set "ready", or "open" if the fix failed. ' +
+          'threadStatus is a snapshot from queueing time; confirm live state with get_comments before acting. Process all events before acknowledging throughSeq.',
         inputSchema: z.object({ port: portSchema }),
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
       },

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 
 import express, { type Request, type Response } from 'express';
 
-import type { DiffCommentThread } from '../types/diff.js';
+import type { CommentThreadStatus, DiffCommentThread } from '../types/diff.js';
 
 import {
   type AuthService,
@@ -43,6 +43,7 @@ import {
   setSecurityHeaders,
 } from './request-security.js';
 import { mergeCommentThreads } from '../utils/commentImports.js';
+import { getThreadStatus } from './agent-event-inbox.js';
 import { parseUserSettingsPatch, readUserConfig, updateUserClientSettings } from './user-config.js';
 import { updateHapiReviewLink } from './hapi-review-link.js';
 
@@ -52,7 +53,7 @@ interface HubReviewThread {
   id: string;
   filePath: string;
   line: number;
-  status: 'open' | 'accepted' | 'changes_requested' | 'to_verify' | 'ready' | 'closed' | 'resolved';
+  status: CommentThreadStatus;
   updatedAt: string;
   lastAuthor?: string;
   lastMessage: string;
@@ -109,16 +110,6 @@ function normalizeExternalReviewUrl(value: string | undefined): string | undefin
   } catch {
     return undefined;
   }
-}
-
-function getThreadStatus(thread: DiffCommentThread): HubReviewThread['status'] {
-  if (thread.closedAt) return 'closed';
-  if (thread.resolvedAt) return 'resolved';
-  if (thread.readyAt) return 'ready';
-  if (thread.toVerifyAt) return 'to_verify';
-  if (thread.changesRequestedAt) return 'changes_requested';
-  if (thread.acceptedAt) return 'accepted';
-  return 'open';
 }
 
 function summarizeThread(thread: DiffCommentThread): HubReviewThread {

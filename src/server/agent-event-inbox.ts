@@ -3,9 +3,28 @@ import { promises as fs } from 'fs';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
 
-import type { DiffCommentThread, DiffCommentMessage, DiffCommentPosition } from '../types/diff.js';
+import type {
+  CommentThreadStatus,
+  DiffCommentThread,
+  DiffCommentMessage,
+  DiffCommentPosition,
+} from '../types/diff.js';
 
 import { ensurePrivateDirectory, writePrivateFile } from './private-storage.js';
+
+/**
+ * Derives the review workflow status from the timestamp flags. Shared with the
+ * hub so the dashboard and the agent event queue agree on naming.
+ */
+export function getThreadStatus(thread: DiffCommentThread): CommentThreadStatus {
+  if (thread.closedAt) return 'closed';
+  if (thread.resolvedAt) return 'resolved';
+  if (thread.readyAt) return 'ready';
+  if (thread.toVerifyAt) return 'to_verify';
+  if (thread.changesRequestedAt) return 'changes_requested';
+  if (thread.acceptedAt) return 'accepted';
+  return 'open';
+}
 
 type AgentReviewEvent =
   | {
@@ -15,6 +34,7 @@ type AgentReviewEvent =
       filePath: string;
       position: DiffCommentPosition;
       message: DiffCommentMessage;
+      threadStatus: CommentThreadStatus;
     }
   | {
       seq: number;
@@ -23,6 +43,7 @@ type AgentReviewEvent =
       filePath: string;
       position: DiffCommentPosition;
       acceptedAt: string;
+      threadStatus: CommentThreadStatus;
     }
   | {
       seq: number;
@@ -31,6 +52,7 @@ type AgentReviewEvent =
       filePath: string;
       position: DiffCommentPosition;
       toVerifyAt: string;
+      threadStatus: CommentThreadStatus;
     };
 
 interface StoredAgentEventInbox {
@@ -132,6 +154,7 @@ export function findAgentReviewEvents(
         filePath: thread.filePath,
         position: thread.position,
         message,
+        threadStatus: getThreadStatus(thread),
       });
     }
 
@@ -142,6 +165,7 @@ export function findAgentReviewEvents(
         filePath: thread.filePath,
         position: thread.position,
         acceptedAt: thread.acceptedAt,
+        threadStatus: getThreadStatus(thread),
       });
     }
 
@@ -152,6 +176,7 @@ export function findAgentReviewEvents(
         filePath: thread.filePath,
         position: thread.position,
         toVerifyAt: thread.toVerifyAt,
+        threadStatus: getThreadStatus(thread),
       });
     }
   }
