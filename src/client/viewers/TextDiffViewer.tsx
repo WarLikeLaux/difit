@@ -100,7 +100,10 @@ export function TextDiffViewer({
             {!isFirstMerged &&
               renderExpandButton('middle', mergedChunk, firstOriginalIndex, lastOriginalIndex)}
 
-            <div id={`chunk-${file.path.replace(/[^a-zA-Z0-9]/g, '-')}-${mergedIndex}`}>
+            <div
+              id={`chunk-${file.path.replace(/[^a-zA-Z0-9]/g, '-')}-${mergedIndex}`}
+              className="diff-chunk-section"
+            >
               <DiffChunk
                 chunk={mergedChunk}
                 chunkIndex={mergedIndex}

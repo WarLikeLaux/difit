@@ -57,6 +57,20 @@ button {
   max-width: 100%;
 }
 
+/* Skip layout and paint work for diff content outside the viewport so very
+   large diffs keep scrolling smoothly. The `auto` keyword in
+   contain-intrinsic-size remembers the last rendered size, which keeps the
+   scrollbar stable once a section has been displayed. */
+.diff-file-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
+
+.diff-chunk-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+
 /* Sparkle animation */
 @keyframes sparkle-rise {
   0% {

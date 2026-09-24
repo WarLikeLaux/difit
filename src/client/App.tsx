@@ -7,6 +7,7 @@ import {
   Keyboard,
   List,
   ExternalLink,
+  FileStack,
   ArrowLeft,
   Eye,
   EyeOff,
@@ -38,6 +39,7 @@ import { CommentsView } from './components/CommentsView';
 import { DiffQuickMenu } from './components/DiffQuickMenu';
 import { DiffViewer } from './components/DiffViewer';
 import { FileList, fileMatchesCodeFilter } from './components/FileList';
+import { FileByFileNavButtons, SingleFileToolbar } from './components/SingleFileToolbar';
 import { GitHubIcon } from './components/GitHubIcon';
 import { HelpModal } from './components/HelpModal';
 import { Logo } from './components/Logo';
@@ -61,6 +63,13 @@ import {
   writeReviewWorkspaceState,
 } from './reviews/reviewWorkspaceState';
 import { fetchClientSettings, saveClientSettings } from './services/userSettings';
+import {
+  DEFAULT_DIFF_LAYOUT_MODE,
+  DIFF_LAYOUT_MODE_STORAGE_KEY,
+  type DiffLayoutMode,
+  getStoredDiffLayoutMode,
+  normalizeDiffLayoutMode,
+} from './utils/diffLayoutMode';
 import { hasMultipleCommentAuthors } from './utils/commentAuthors';
 import { getCommentStorageNamespace } from './utils/commentStorageNamespace';
 import { getReviewsDashboardUrl, resolveApiUrl } from './utils/apiUrl';
@@ -222,6 +231,11 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
   const [diffMode, setDiffMode] = useState<DiffViewMode>(
     () => initialWorkspaceStateRef.current.diffMode ?? getInitialDiffViewMode(),
   );
+  const [diffLayoutMode, setDiffLayoutMode] = useState<DiffLayoutMode>(
+    () => getStoredDiffLayoutMode() ?? DEFAULT_DIFF_LAYOUT_MODE,
+  );
+  const [activeSingleFilePath, setActiveSingleFilePath] = useState<string | null>(null);
+  const isFileByFileView = diffLayoutMode === 'file-by-file';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(getInitialSidebarWidth);
@@ -561,34 +575,20 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
     [deferredCodeFilterText, diffData?.files],
   );
 
+  // The single file shown in file-by-file mode. Falls back to the first
+  // visible file when the remembered path is missing (e.g. after switching to
+  // a diff that no longer contains it).
+  const activeSingleFileEntry = useMemo(() => {
+    if (!isFileByFileView) return null;
+    const found = activeSingleFilePath
+      ? visibleDiffFiles.find((entry) => entry.file.path === activeSingleFilePath)
+      : undefined;
+    return found ?? visibleDiffFiles[0] ?? null;
+  }, [activeSingleFilePath, isFileByFileView, visibleDiffFiles]);
+
   useEffect(
     () => updateCodeSearchHighlights(deferredCodeFilterText),
     [deferredCodeFilterText, diffMode, renderedFilePaths],
-  );
-
-  const scrollVisibleFileIntoDiffContainer = useCallback(
-    (filePath: string) => {
-      if (!deferredCodeFilterText.trim()) {
-        scrollFileIntoDiffContainer(filePath);
-        return;
-      }
-
-      ensureFileRendered(filePath);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const scrollContainer = diffScrollContainerRef.current;
-          const target = document.getElementById(getFileElementId(filePath));
-          if (!scrollContainer || !target) return;
-
-          const containerRect = scrollContainer.getBoundingClientRect();
-          const targetRect = target.getBoundingClientRect();
-          scrollContainer.scrollTo({
-            top: Math.max(0, scrollContainer.scrollTop + targetRect.top - containerRect.top),
-          });
-        });
-      });
-    },
-    [deferredCodeFilterText, ensureFileRendered, scrollFileIntoDiffContainer],
   );
 
   const toggleFileReviewed = useCallback(
@@ -621,12 +621,19 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
 
       if (shouldScrollToHeader) {
         setTimeout(() => {
+          // In file-by-file mode the collapsed file is the only mounted one;
+          // just snap back to its top instead of rendering the files above it.
+          if (isFileByFileView) {
+            diffScrollContainerRef.current?.scrollTo({ top: 0 });
+            return;
+          }
           scrollFileIntoDiffContainer(filePath);
         }, 100);
       }
     },
     [
       diffData,
+      isFileByFileView,
       isFileScrolledPastContainerTop,
       scrollFileIntoDiffContainer,
       toggleFileViewed,
@@ -700,6 +707,37 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
     saveClientSettings({ diffViewMode: mode });
   }, []);
 
+  const handleDiffLayoutModeChange = useCallback(
+    (mode: DiffLayoutMode) => {
+      setDiffLayoutMode(mode);
+      try {
+        window.localStorage.setItem(DIFF_LAYOUT_MODE_STORAGE_KEY, mode);
+      } catch {
+        // Ignore localStorage errors (e.g. disabled storage).
+      }
+      saveClientSettings({ diffLayoutMode: mode });
+
+      if (mode === 'all-files' && activeSingleFilePath) {
+        // Keep the file that was open in file-by-file view rendered and in view.
+        ensureFileRendered(activeSingleFilePath);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const scrollContainer = diffScrollContainerRef.current;
+            const target = document.getElementById(getFileElementId(activeSingleFilePath));
+            if (!scrollContainer || !target) return;
+
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            scrollContainer.scrollTo({
+              top: Math.max(0, scrollContainer.scrollTop + targetRect.top - containerRect.top),
+            });
+          });
+        });
+      }
+    },
+    [activeSingleFilePath, ensureFileRendered],
+  );
+
   const toggleResolvedComments = useCallback(() => {
     setShowResolvedComments((current) => {
       const next = !current;
@@ -758,12 +796,23 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
       return;
     }
 
+    // In file-by-file mode only the mounted file needs merged chunks.
+    const renderedPaths = activeSingleFileEntry
+      ? new Set([activeSingleFileEntry.file.path])
+      : renderedFilePaths;
     setMergedChunksState(
-      buildMergedChunksState(diffDataVersion, renderedFilePaths, filesByPath, (file) =>
+      buildMergedChunksState(diffDataVersion, renderedPaths, filesByPath, (file) =>
         getMergedChunksRef.current(file),
       ),
     );
-  }, [diffData, diffDataVersion, filesByPath, renderedFilePaths, lastUpdatedAt]);
+  }, [
+    activeSingleFileEntry,
+    diffData,
+    diffDataVersion,
+    filesByPath,
+    renderedFilePaths,
+    lastUpdatedAt,
+  ]);
 
   // Create files with merged chunks for keyboard navigation
   const navigableFiles = useMemo(() => {
@@ -1003,17 +1052,93 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
     [toggleFileReviewed, diffData, rememberFilePosition],
   );
 
+  const scrollVisibleFileIntoDiffContainer = useCallback(
+    (filePath: string) => {
+      if (isFileByFileView) {
+        // In file-by-file mode, swap the mounted file instead of rendering the
+        // whole list up to the target.
+        if (!visibleDiffFiles.some((entry) => entry.file.path === filePath)) {
+          setCodeFilterText('');
+        }
+        setActiveSingleFilePath(filePath);
+        const fileIndex = diffData?.files.findIndex((f) => f.path === filePath) ?? -1;
+        if (fileIndex >= 0) {
+          rememberFilePosition(fileIndex);
+        }
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            diffScrollContainerRef.current?.scrollTo({ top: 0 });
+          });
+        });
+        return;
+      }
+
+      if (!deferredCodeFilterText.trim()) {
+        scrollFileIntoDiffContainer(filePath);
+        return;
+      }
+
+      ensureFileRendered(filePath);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const scrollContainer = diffScrollContainerRef.current;
+          const target = document.getElementById(getFileElementId(filePath));
+          if (!scrollContainer || !target) return;
+
+          const containerRect = scrollContainer.getBoundingClientRect();
+          const targetRect = target.getBoundingClientRect();
+          scrollContainer.scrollTo({
+            top: Math.max(0, scrollContainer.scrollTop + targetRect.top - containerRect.top),
+          });
+        });
+      });
+    },
+    [
+      deferredCodeFilterText,
+      diffData,
+      ensureFileRendered,
+      isFileByFileView,
+      rememberFilePosition,
+      scrollFileIntoDiffContainer,
+      visibleDiffFiles,
+    ],
+  );
+
+  // Keep the rendered content in sync with the keyboard cursor. In file-by-file
+  // mode that means mounting the cursor's file; otherwise it means rendering
+  // every file up to it so the cursor line exists.
   useEffect(() => {
     if (!diffData || !cursor) return;
 
     const filePath = diffData.files[cursor.fileIndex]?.path;
-    if (!filePath || renderedFilePaths.has(filePath)) return;
+    if (!filePath) return;
+
+    if (isFileByFileView) {
+      if (!visibleDiffFiles.some((entry) => entry.file.path === filePath)) return;
+      if (activeSingleFilePath === filePath) return;
+      setActiveSingleFilePath(filePath);
+      requestAnimationFrame(() => {
+        setCursorPosition(cursor);
+      });
+      return;
+    }
+
+    if (renderedFilePaths.has(filePath)) return;
 
     ensureFilesRenderedUpTo(filePath);
     requestAnimationFrame(() => {
       setCursorPosition(cursor);
     });
-  }, [cursor, diffData, ensureFilesRenderedUpTo, renderedFilePaths, setCursorPosition]);
+  }, [
+    activeSingleFilePath,
+    cursor,
+    diffData,
+    ensureFilesRenderedUpTo,
+    isFileByFileView,
+    renderedFilePaths,
+    setCursorPosition,
+    visibleDiffFiles,
+  ]);
 
   const handleLineClick = useCallback(
     (fileIndex: number, chunkIndex: number, lineIndex: number, side: 'left' | 'right') => {
@@ -1187,6 +1312,16 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
         const localDiffViewMode = getStoredDiffViewMode();
         if (localDiffViewMode) {
           seed.diffViewMode = localDiffViewMode;
+        }
+      }
+
+      const remoteDiffLayoutMode = normalizeDiffLayoutMode(client.diffLayoutMode);
+      if (remoteDiffLayoutMode) {
+        setDiffLayoutMode(remoteDiffLayoutMode);
+      } else {
+        const localDiffLayoutMode = getStoredDiffLayoutMode();
+        if (localDiffLayoutMode) {
+          seed.diffLayoutMode = localDiffLayoutMode;
         }
       }
 
@@ -1516,7 +1651,14 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
       const position = findCommentPosition(thread, navigableFiles);
 
       setCodeFilterText('');
-      ensureFilesRenderedUpTo(filePath);
+      if (isFileByFileView) {
+        // Mount only the thread's file; renderedFilePaths is still bumped so
+        // the pending-thread scroll effect re-runs once the content exists.
+        setActiveSingleFilePath(filePath);
+        ensureFileRendered(filePath);
+      } else {
+        ensureFilesRenderedUpTo(filePath);
+      }
       setCollapsedFiles((current) => {
         if (!current.has(filePath)) return current;
         const next = new Set(current);
@@ -1535,7 +1677,9 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
     },
     [
       diffData,
+      ensureFileRendered,
       ensureFilesRenderedUpTo,
+      isFileByFileView,
       navigableFiles,
       scrollFileIntoDiffContainer,
       selectMainView,
@@ -1816,6 +1960,26 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
                   Comments ({threads.length})
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() =>
+                  handleDiffLayoutModeChange(isFileByFileView ? 'all-files' : 'file-by-file')
+                }
+                aria-pressed={isFileByFileView}
+                title={
+                  isFileByFileView
+                    ? 'Showing one file at a time. Click to show all files.'
+                    : 'Show one file at a time (useful for very large diffs)'
+                }
+                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-xs transition-colors ${
+                  isFileByFileView
+                    ? 'border-blue-500 bg-blue-500/10 text-github-text-primary'
+                    : 'border-github-border text-github-text-secondary hover:bg-github-bg-tertiary hover:text-github-text-primary'
+                }`}
+              >
+                <FileStack size={14} />
+                <span className={isMobile ? 'sr-only' : undefined}>File by file</span>
+              </button>
               {mainView === 'diff' && closedThreadCount > 0 && (
                 <button
                   type="button"
@@ -2046,6 +2210,31 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
           />
         )}
 
+        {mainView === 'diff' && isFileByFileView && activeSingleFileEntry && (
+          <>
+            <SingleFileToolbar
+              filePath={activeSingleFileEntry.file.path}
+              fileIndex={visibleDiffFiles.findIndex(
+                (entry) => entry.fileIndex === activeSingleFileEntry.fileIndex,
+              )}
+              totalFiles={visibleDiffFiles.length}
+              onShowAllFiles={() => handleDiffLayoutModeChange('all-files')}
+            />
+            <FileByFileNavButtons
+              fileIndex={visibleDiffFiles.findIndex(
+                (entry) => entry.fileIndex === activeSingleFileEntry.fileIndex,
+              )}
+              totalFiles={visibleDiffFiles.length}
+              onSelectIndex={(index) => {
+                const entry = visibleDiffFiles[index];
+                if (entry) {
+                  scrollVisibleFileIntoDiffContainer(entry.file.path);
+                }
+              }}
+            />
+          </>
+        )}
+
         <div
           className={`flex flex-1 overflow-hidden relative ${mainView !== 'diff' ? 'hidden' : ''}`}
         >
@@ -2083,7 +2272,12 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
                   reviewedFiles={viewedFiles}
                   onToggleReviewed={toggleFileReviewed}
                   onToggleFolderReviewed={toggleFolderReviewed}
-                  selectedFileIndex={cursor?.fileIndex ?? null}
+                  selectedFileIndex={
+                    cursor?.fileIndex ??
+                    (isFileByFileView && activeSingleFileEntry
+                      ? activeSingleFileEntry.fileIndex
+                      : null)
+                  }
                   codeFilterText={codeFilterText}
                   onCodeFilterTextChange={setCodeFilterText}
                 />
@@ -2129,11 +2323,15 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
             className={`flex-1 overflow-y-auto ${showMobileCommentsBar ? 'pb-16' : ''}`}
           >
             {visibleDiffFiles.map(({ file, fileIndex }) => {
+              // In file-by-file mode only the active file is mounted.
+              if (isFileByFileView && activeSingleFileEntry?.fileIndex !== fileIndex) {
+                return null;
+              }
               const fileThreads = threadsByFile.get(file.path) ?? EMPTY_COMMENT_THREADS;
               const mergedChunks =
                 getMergedChunksForVersion(mergedChunksState, diffDataVersion, file.path) ??
                 EMPTY_MERGED_CHUNKS;
-              const isRendered = renderedFilePaths.has(file.path);
+              const isRendered = isFileByFileView || renderedFilePaths.has(file.path);
               return (
                 <div
                   key={file.path}
@@ -2141,7 +2339,7 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
                   data-file-path={file.path}
                   data-rendered={isRendered ? 'true' : 'false'}
                   ref={(node) => registerLazyFileContainer(file.path, node)}
-                  className="mb-6"
+                  className="diff-file-section mb-6"
                   onMouseEnter={() => {
                     hoveredFileIndexRef.current = fileIndex;
                   }}

@@ -1419,3 +1419,120 @@ describe('App Component - Code filter', () => {
     });
   });
 });
+
+describe('App Component - File-by-file view mode', () => {
+  const createChunk = (marker: string) => ({
+    header: `@@ -1,2 +1,3 @@ ${marker}`,
+    oldStart: 1,
+    oldLines: 2,
+    newStart: 1,
+    newLines: 3,
+    lines: [
+      {
+        type: 'normal' as const,
+        content: `const ctx = '${marker}';`,
+        oldLineNumber: 1,
+        newLineNumber: 1,
+      },
+      { type: 'add' as const, content: `const ${marker}Added = true;`, newLineNumber: 2 },
+      {
+        type: 'normal' as const,
+        content: `const tail = 2; // ${marker}`,
+        oldLineNumber: 2,
+        newLineNumber: 3,
+      },
+    ],
+  });
+
+  const multiFileDiff: DiffResponse = {
+    ...mockDiffResponse,
+    files: ['alpha', 'beta', 'gamma'].map((name) => ({
+      path: `${name}.ts`,
+      status: 'modified' as const,
+      additions: 1,
+      deletions: 0,
+      chunks: [createChunk(name)],
+    })),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockComments = [];
+    mockFetch(multiFileDiff);
+  });
+
+  const getRenderedSections = () => Array.from(document.querySelectorAll('[data-file-path]'));
+
+  it('renders all files by default with content-visibility sections', async () => {
+    const { container } = renderApp();
+    await screen.findAllByText('alpha.ts');
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-file-path]')).toHaveLength(3);
+    });
+    getRenderedSections().forEach((section) => {
+      expect(section).toHaveClass('diff-file-section');
+    });
+  });
+
+  it('mounts only the active file in file-by-file mode', async () => {
+    window.localStorage.setItem('difit.diffLayoutMode', 'file-by-file');
+    const { container } = renderApp();
+    await screen.findAllByText('alpha.ts');
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-file-path]')).toHaveLength(1);
+    });
+    expect(getRenderedSections()[0]?.getAttribute('data-file-path')).toBe('alpha.ts');
+    expect(await screen.findByTestId('single-file-progress')).toHaveTextContent('1 / 3');
+  });
+
+  it('switches files with the floating navigation buttons', async () => {
+    window.localStorage.setItem('difit.diffLayoutMode', 'file-by-file');
+    const { container } = renderApp();
+    await screen.findAllByText('alpha.ts');
+
+    const prevButton = await screen.findByRole('button', { name: 'Previous file' });
+    const nextButton = screen.getByRole('button', { name: 'Next file' });
+    expect(prevButton).toBeDisabled();
+    expect(nextButton).toBeEnabled();
+
+    fireEvent.click(nextButton);
+    await waitFor(() => {
+      expect(container.querySelector('[data-file-path="beta.ts"]')).toBeInTheDocument();
+    });
+    expect(container.querySelectorAll('[data-file-path]')).toHaveLength(1);
+    expect(screen.getByTestId('single-file-progress')).toHaveTextContent('2 / 3');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous file' }));
+    await waitFor(() => {
+      expect(container.querySelector('[data-file-path="alpha.ts"]')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('single-file-progress')).toHaveTextContent('1 / 3');
+    expect(screen.getByRole('button', { name: 'Previous file' })).toBeDisabled();
+  });
+
+  it('returns to the all-files view from the toolbar', async () => {
+    window.localStorage.setItem('difit.diffLayoutMode', 'file-by-file');
+    const { container } = renderApp();
+    await screen.findAllByText('alpha.ts');
+
+    fireEvent.click(await screen.findByRole('button', { name: /view all files/i }));
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-file-path]')).toHaveLength(3);
+    });
+    expect(screen.queryByTestId('single-file-progress')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem('difit.diffLayoutMode')).toBe('all-files');
+  });
+
+  it('persists the header toggle to localStorage', async () => {
+    renderApp();
+    await screen.findAllByText('alpha.ts');
+
+    fireEvent.click(screen.getByRole('button', { name: /file by file/i }));
+    expect(window.localStorage.getItem('difit.diffLayoutMode')).toBe('file-by-file');
+    await waitFor(() => {
+      expect(getRenderedSections()).toHaveLength(1);
+    });
+  });
+});
