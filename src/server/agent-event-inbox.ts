@@ -228,7 +228,9 @@ export class AgentEventInbox {
   #state = emptyInbox();
   #operations: Promise<void> = Promise.resolve();
   #wakeTimer?: NodeJS.Timeout;
+  #wakeScheduledAt?: number;
   #disposed = false;
+  #manualWakeCount = 0;
 
   constructor(options: AgentEventInboxOptions) {
     this.#reviewId = options.reviewId;
@@ -367,6 +369,40 @@ export class AgentEventInbox {
     });
   }
 
+  getStatus(): {
+    pendingCount: number;
+    wakeAvailable: boolean;
+    wakeOutstanding: boolean;
+    wakeScheduledAt: string | undefined;
+  } {
+    return {
+      pendingCount: this.#state.events.length,
+      wakeAvailable: Boolean(this.#hapiSessionId) && !this.#disposed,
+      wakeOutstanding: this.#state.wakeOutstanding,
+      wakeScheduledAt:
+        this.#wakeScheduledAt !== undefined
+          ? new Date(this.#wakeScheduledAt).toISOString()
+          : undefined,
+    };
+  }
+
+  /**
+   * Sends the pending wake immediately, bypassing the batch debounce. Used by
+   * the viewer's "Send to agent" button when the user knows they are done
+   * writing feedback. A manual wake re-pings even while a wake is already
+   * outstanding, and uses a one-off local ID so HAPI does not deduplicate it.
+   */
+  async deliverNow(): Promise<{ pendingCount: number; woke: boolean }> {
+    return this.#serialize(async () => {
+      if (this.#disposed || !this.#hapiSessionId || this.#state.events.length === 0) {
+        return { pendingCount: this.#state.events.length, woke: false };
+      }
+      this.#clearWakeTimer();
+      await this.#deliverWake(true, true);
+      return { pendingCount: this.#state.events.length, woke: this.#state.wakeOutstanding };
+    });
+  }
+
   dispose(): void {
     this.#disposed = true;
     this.#clearWakeTimer();
@@ -395,31 +431,38 @@ export class AgentEventInbox {
         return;
       }
     }
+    if (!retryOutstanding) {
+      // Exposed via getStatus() so the viewer can show a seconds countdown.
+      this.#wakeScheduledAt = Date.now() + delay;
+    }
     this.#wakeTimer = setTimeout(() => {
       this.#wakeTimer = undefined;
+      this.#wakeScheduledAt = undefined;
       void this.#serialize(() => this.#deliverWake(retryOutstanding));
     }, delay);
     this.#wakeTimer.unref?.();
   }
 
-  async #deliverWake(retryOutstanding: boolean): Promise<void> {
+  async #deliverWake(retryOutstanding: boolean, manual = false): Promise<void> {
     if (
       this.#disposed ||
       !this.#hapiSessionId ||
-      (this.#state.wakeOutstanding && !retryOutstanding) ||
+      (this.#state.wakeOutstanding && !retryOutstanding && !manual) ||
       this.#state.events.length === 0
     ) {
       return;
     }
 
     const message = [
-      `Difit review ${this.#reviewId} has new user feedback or a requested status action.`,
+      `Difit review ${this.#reviewId} has ${this.#state.events.length} queued review event(s): new user feedback or a requested status action.`,
       `Use the difit MCP get_events tool with port ${this.#port}; CLI fallback: difit comment events --port ${this.#port}`,
       `After handling every returned event, acknowledge the exact throughSeq with the MCP ack_events tool; CLI fallback: difit comment ack <throughSeq> --port ${this.#port}`,
     ].join('\n');
     const firstPendingSeq = this.#state.events[0]?.seq;
     if (firstPendingSeq === undefined) return;
-    const localId = `difit-wake:${this.#reviewId}:${this.#port}:${firstPendingSeq}`;
+    const localId = manual
+      ? `difit-wake:${this.#reviewId}:${this.#port}:${firstPendingSeq}:manual-${++this.#manualWakeCount}`
+      : `difit-wake:${this.#reviewId}:${this.#port}:${firstPendingSeq}`;
 
     try {
       await this.#sendWake(this.#hapiSessionId, message, localId);
@@ -439,6 +482,7 @@ export class AgentEventInbox {
     if (!this.#wakeTimer) return;
     clearTimeout(this.#wakeTimer);
     this.#wakeTimer = undefined;
+    this.#wakeScheduledAt = undefined;
   }
 
   async #persist(): Promise<void> {

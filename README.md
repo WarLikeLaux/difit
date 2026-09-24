@@ -133,7 +133,7 @@ Detailed setup instructions for connecting and updating Difit across **Claude Co
 
 MCP and CLI commands talk to the same authenticated local API. The CLI remains the fallback when the plugin is unavailable.
 
-In HAPI, start the viewer with `--background` from the agent session’s shell so it inherits the current session identity. The viewer can then wake that session when feedback arrives. MCP handles later review operations; it should not start the HAPI-bound viewer from a long-lived process that lacks the current session context.
+In HAPI, start the viewer with `--background` from the agent session’s shell so it inherits the current session identity. The viewer can then wake that session when feedback arrives; queued feedback is batched behind a short debounce, and a **Send to agent (N)** header button appears while events are pending to deliver the wake immediately. MCP handles later review operations; it should not start the HAPI-bound viewer from a long-lived process that lacks the current session context.
 
 When reconnecting or restarting an existing review, run the canonical command again without its original `--comment` arguments. Persisted threads are restored from the review identity; replaying startup comments without stable IDs creates duplicate `Open` threads.
 

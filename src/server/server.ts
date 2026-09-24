@@ -1158,6 +1158,22 @@ export async function startServer(options: ServerOptions): Promise<{
     res.json(await agentEventInbox.acknowledge(throughSeq));
   });
 
+  app.get('/api/agent-events/status', (_req, res) => {
+    if (!agentEventInbox) {
+      res.status(404).json({ error: 'Agent event inbox is not available' });
+      return;
+    }
+    res.json(agentEventInbox.getStatus());
+  });
+
+  app.post('/api/agent-events/flush', async (_req, res) => {
+    if (!agentEventInbox) {
+      res.status(404).json({ error: 'Agent event inbox is not available' });
+      return;
+    }
+    res.json(await agentEventInbox.deliverNow());
+  });
+
   app.get('/api/comments-json', (req, res) => {
     const selection = getCommentSelectionFromQuery(req.query as Record<string, unknown>);
     const session = getOrCreateCommentSession(selection);

@@ -166,6 +166,31 @@ describe('Server Integration Tests', () => {
         expect(batch.events).toEqual([expect.objectContaining({ type: 'userMessage', seq: 1 })]);
         expect(batch.throughSeq).toBe(1);
 
+        const statusResponse = await fetch(
+          `http://localhost:${result.port}/api/agent-events/status`,
+        );
+        const statusBody = (await statusResponse.json()) as {
+          pendingCount: number;
+          wakeAvailable: boolean;
+          wakeOutstanding: boolean;
+          wakeScheduledAt?: string;
+        };
+        expect(statusBody).toMatchObject({
+          pendingCount: 1,
+          wakeAvailable: false,
+          wakeOutstanding: false,
+        });
+        // No HAPI session is bound in this environment, so no wake is scheduled
+        expect(statusBody.wakeScheduledAt).toBeUndefined();
+
+        const flushResponse = await fetch(
+          `http://localhost:${result.port}/api/agent-events/flush`,
+          {
+            method: 'POST',
+          },
+        );
+        expect(await flushResponse.json()).toEqual({ pendingCount: 1, woke: false });
+
         const ackResponse = await fetch(`http://localhost:${result.port}/api/agent-events/ack`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -349,4 +349,148 @@ describe('AgentEventInbox', () => {
     expect(batch.events[0]).toMatchObject({ threadId: 't-2' });
     inbox.dispose();
   });
+
+  it('delivers the wake immediately on manual flush, bypassing the debounce', async () => {
+    vi.useFakeTimers();
+    const directory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-'));
+    temporaryDirectories.push(directory);
+    const sendWake = vi.fn(
+      async (_sessionId: string, _message: string, _localId: string) => undefined,
+    );
+    const inbox = new AgentEventInbox({
+      reviewId: 'review-1',
+      port: 4966,
+      hapiSessionId: 'hapi-session',
+      configDirectory: directory,
+      debounceMs: 60_000,
+      sendWake,
+    });
+    await inbox.initialize();
+
+    await inbox.recordChanges([], [thread([message('message-1', 'first')])]);
+    const result = await inbox.deliverNow();
+    expect(sendWake).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ pendingCount: 1, woke: true });
+
+    // No wake should fire from the debounce window itself
+    await vi.advanceTimersByTimeAsync(60_000);
+    await inbox.flush();
+    expect(sendWake).toHaveBeenCalledTimes(1);
+
+    // Repeated manual flushes use unique local IDs so HAPI does not dedupe them
+    await inbox.deliverNow();
+    expect(sendWake).toHaveBeenCalledTimes(2);
+    const localIds = sendWake.mock.calls.map((call) => call[2]);
+    expect(localIds[0]).toBe('difit-wake:review-1:4966:1:manual-1');
+    expect(localIds[1]).toBe('difit-wake:review-1:4966:1:manual-2');
+    inbox.dispose();
+  });
+
+  it('re-pings on manual flush even while a wake is outstanding', async () => {
+    vi.useFakeTimers();
+    const directory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-'));
+    temporaryDirectories.push(directory);
+    const sendWake = vi.fn(
+      async (_sessionId: string, _message: string, _localId: string) => undefined,
+    );
+    const inbox = new AgentEventInbox({
+      reviewId: 'review-1',
+      port: 4966,
+      hapiSessionId: 'hapi-session',
+      configDirectory: directory,
+      debounceMs: 10,
+      retryMs: 5 * 60_000,
+      sendWake,
+    });
+    await inbox.initialize();
+
+    await inbox.recordChanges([], [thread([message('message-1', 'first')])]);
+    await vi.advanceTimersByTimeAsync(10);
+    await inbox.flush();
+    expect(sendWake).toHaveBeenCalledTimes(1);
+
+    const result = await inbox.deliverNow();
+    expect(result).toEqual({ pendingCount: 1, woke: true });
+    expect(sendWake).toHaveBeenCalledTimes(2);
+    expect(sendWake.mock.calls[1][2]).toBe('difit-wake:review-1:4966:1:manual-1');
+    inbox.dispose();
+  });
+
+  it('reports pending count and wake availability in status', async () => {
+    vi.useFakeTimers();
+    const directory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-'));
+    temporaryDirectories.push(directory);
+    const sendWake = vi.fn(async () => undefined);
+    const inbox = new AgentEventInbox({
+      reviewId: 'review-1',
+      port: 4966,
+      hapiSessionId: 'hapi-session',
+      configDirectory: directory,
+      debounceMs: 10,
+      sendWake,
+    });
+    await inbox.initialize();
+
+    expect(inbox.getStatus()).toEqual({
+      pendingCount: 0,
+      wakeAvailable: true,
+      wakeOutstanding: false,
+    });
+
+    await inbox.recordChanges([], [thread([message('message-1', 'first')])]);
+    expect(inbox.getStatus().pendingCount).toBe(1);
+    // A debounce timer is scheduled 10ms out, exposed for the viewer countdown
+    const scheduledAt = inbox.getStatus().wakeScheduledAt;
+    expect(Date.parse(scheduledAt ?? '') - Date.now()).toBe(10);
+
+    await vi.advanceTimersByTimeAsync(10);
+    await inbox.flush();
+    expect(inbox.getStatus().wakeOutstanding).toBe(true);
+    // While the wake is outstanding only the retry timer runs, which is not counted down
+    expect(inbox.getStatus().wakeScheduledAt).toBeUndefined();
+    inbox.dispose();
+
+    const detached = new AgentEventInbox({
+      reviewId: 'review-2',
+      port: 4967,
+      configDirectory: directory,
+      debounceMs: 10,
+      sendWake,
+    });
+    await detached.initialize();
+    expect(detached.getStatus()).toMatchObject({ pendingCount: 0, wakeAvailable: false });
+    detached.dispose();
+  });
+
+  it('returns woke false on manual flush without a session or pending events', async () => {
+    vi.useFakeTimers();
+    const directory = await fs.mkdtemp(join(tmpdir(), 'difit-agent-events-'));
+    temporaryDirectories.push(directory);
+    const sendWake = vi.fn(async () => undefined);
+    const inbox = new AgentEventInbox({
+      reviewId: 'review-1',
+      port: 4966,
+      configDirectory: directory,
+      debounceMs: 10,
+      sendWake,
+    });
+    await inbox.initialize();
+
+    expect(await inbox.deliverNow()).toEqual({ pendingCount: 0, woke: false });
+
+    const pending = new AgentEventInbox({
+      reviewId: 'review-1',
+      port: 4966,
+      hapiSessionId: 'hapi-session',
+      configDirectory: directory,
+      debounceMs: 10,
+      sendWake,
+    });
+    await pending.initialize();
+    await pending.recordChanges([], [thread([message('message-1', 'first')])]);
+    expect(await pending.deliverNow()).toEqual({ pendingCount: 1, woke: true });
+    pending.dispose();
+    expect(sendWake).toHaveBeenCalledTimes(1);
+    inbox.dispose();
+  });
 });

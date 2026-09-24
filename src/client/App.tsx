@@ -44,12 +44,14 @@ import { GitHubIcon } from './components/GitHubIcon';
 import { HelpModal } from './components/HelpModal';
 import { Logo } from './components/Logo';
 import { ReloadButton } from './components/ReloadButton';
+import { SendToAgentButton } from './components/SendToAgentButton';
 import { ReviewSwitcher } from './components/ReviewSwitcher';
 import { RevisionDetailModal } from './components/RevisionDetailModal';
 import { SettingsModal } from './components/SettingsModal';
 import { SparkleAnimation } from './components/SparkleAnimation';
 import { WordHighlightProvider } from './contexts/WordHighlightContext';
 import { useAppearanceSettings } from './hooks/useAppearanceSettings';
+import { useAgentEventsStatus } from './hooks/useAgentEventsStatus';
 import { useDiffComments } from './hooks/useDiffComments';
 import { useExpandedLines, type MergedChunk } from './hooks/useExpandedLines';
 import { useFileWatch } from './hooks/useFileWatch';
@@ -974,6 +976,24 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
     lineIndex: number;
   } | null>(null);
   const fetchDiffDataRef = useRef<((selection?: DiffSelection) => Promise<void>) | null>(null);
+  const [agentEventsRefreshSignal, setAgentEventsRefreshSignal] = useState(0);
+  const agentEventsStatus = useAgentEventsStatus({ refreshSignal: agentEventsRefreshSignal });
+  const bumpAgentEventsRefresh = useCallback(() => {
+    setAgentEventsRefreshSignal((signal) => signal + 1);
+  }, []);
+  const [isFlushingAgentEvents, setIsFlushingAgentEvents] = useState(false);
+  const handleFlushAgentEvents = useCallback(async () => {
+    if (isFlushingAgentEvents) return;
+    setIsFlushingAgentEvents(true);
+    try {
+      await fetch(resolveApiUrl('/api/agent-events/flush'), { method: 'POST' });
+    } catch {
+      // The status polling reflects the outcome; nothing else to do here.
+    } finally {
+      setIsFlushingAgentEvents(false);
+      bumpAgentEventsRefresh();
+    }
+  }, [isFlushingAgentEvents, bumpAgentEventsRefresh]);
   const handleWatchReload = useCallback(async () => {
     await fetchDiffDataRef.current?.();
   }, []);
@@ -986,10 +1006,11 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
       if (commentsContextKey) {
         setBootstrappedCommentsKey(commentsContextKey);
       }
+      bumpAgentEventsRefresh();
     } catch (commentsError) {
       console.error('Failed to refresh comments from server:', commentsError);
     }
-  }, [commentsContextKey, fetchServerThreads, replaceThreads]);
+  }, [commentsContextKey, fetchServerThreads, replaceThreads, bumpAgentEventsRefresh]);
 
   // File watch for reload functionality - initialize with callback
   const { shouldReload, reload, watchState } = useFileWatch(
@@ -1559,14 +1580,22 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
       };
     }
 
-    syncThreadsToServer(threads).catch((syncError) => {
-      console.error('Failed to sync comments:', syncError);
-    });
+    syncThreadsToServer(threads)
+      .then(() => bumpAgentEventsRefresh())
+      .catch((syncError) => {
+        console.error('Failed to sync comments:', syncError);
+      });
 
     return () => {
       window.removeEventListener('beforeunload', sendCommentsBeforeUnload);
     };
-  }, [getCommentApiUrl, hasBootstrappedComments, syncThreadsToServer, threads]);
+  }, [
+    getCommentApiUrl,
+    hasBootstrappedComments,
+    syncThreadsToServer,
+    threads,
+    bumpAgentEventsRefresh,
+  ]);
 
   // Establish SSE connection for tab close detection
   useEffect(() => {
@@ -2006,6 +2035,16 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
                     Closed ({closedThreadCount})
                   </span>
                 </button>
+              )}
+              {agentEventsStatus?.wakeAvailable && agentEventsStatus.pendingCount > 0 && (
+                <SendToAgentButton
+                  pendingCount={agentEventsStatus.pendingCount}
+                  wakeOutstanding={agentEventsStatus.wakeOutstanding}
+                  wakeScheduledAt={agentEventsStatus.wakeScheduledAt}
+                  isFlushing={isFlushingAgentEvents}
+                  isMobile={isMobile}
+                  onFlush={() => void handleFlushAgentEvents()}
+                />
               )}
               {/* File Watch Reload Button */}
               <ReloadButton

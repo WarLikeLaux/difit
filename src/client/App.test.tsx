@@ -1001,8 +1001,12 @@ describe('App Component - Diff Mode Persistence', () => {
     fireEvent.click(refreshButton);
 
     await waitFor(() => {
-      // 4 calls: initial /api/diff, /api/revisions, initial /api/comments sync, and refresh /api/diff
-      expect(mockGlobalFetch).toHaveBeenCalledTimes(4);
+      // Exactly 2 /api/diff calls: the initial load and the refresh.
+      // (Status polling and comment sync add unrelated calls.)
+      const diffCalls = mockGlobalFetch.mock.calls.filter((call) =>
+        String(call[0]).includes('/api/diff'),
+      );
+      expect(diffCalls).toHaveLength(2);
     });
 
     await waitFor(() => {
@@ -1534,5 +1538,96 @@ describe('App Component - File-by-file view mode', () => {
     await waitFor(() => {
       expect(getRenderedSections()).toHaveLength(1);
     });
+  });
+});
+
+describe('App Component - Send to agent button', () => {
+  interface AgentStatus {
+    pendingCount: number;
+    wakeAvailable: boolean;
+    wakeOutstanding: boolean;
+    wakeScheduledAt?: string;
+  }
+
+  let agentStatus: AgentStatus | null;
+  let flushCalls: Array<string | undefined>;
+
+  const mockFetchWithAgentStatus = () => {
+    vi.mocked(global.fetch).mockImplementation((input, init) => {
+      const url = String(input);
+
+      if (url.includes('/api/agent-events/status')) {
+        return Promise.resolve({
+          ok: agentStatus !== null,
+          json: async () => agentStatus ?? { error: 'Agent event inbox is not available' },
+        } as Response);
+      }
+
+      if (url.includes('/api/agent-events/flush')) {
+        flushCalls.push(url, init?.method);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            pendingCount: agentStatus?.pendingCount ?? 0,
+            woke: agentStatus?.wakeAvailable ?? false,
+          }),
+        } as Response);
+      }
+
+      if (url.startsWith('/api/revisions')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ specialOptions: [], branches: [], commits: [] }),
+        } as Response);
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => mockDiffResponse,
+        blob: async () => ({ size: 1024 }),
+      } as Response);
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockComments = [];
+    agentStatus = { pendingCount: 2, wakeAvailable: true, wakeOutstanding: false };
+    flushCalls = [];
+    mockFetchWithAgentStatus();
+  });
+
+  it('shows pending events and flushes them on click', async () => {
+    agentStatus = {
+      pendingCount: 2,
+      wakeAvailable: true,
+      wakeOutstanding: false,
+      wakeScheduledAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    mockFetchWithAgentStatus();
+    renderApp();
+
+    const button = await screen.findByTestId('send-to-agent');
+    expect(button).toHaveTextContent(/Send to agent \(2\) · \d+s/);
+
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(flushCalls).toEqual([expect.stringContaining('/api/agent-events/flush'), 'POST']);
+    });
+
+    // The agent acknowledges while flushing, so the queue drains and the button hides
+    agentStatus = { pendingCount: 0, wakeAvailable: true, wakeOutstanding: false };
+    await waitFor(() => {
+      expect(screen.queryByTestId('send-to-agent')).not.toBeInTheDocument();
+    });
+  });
+
+  it('hides the button when the agent inbox is unavailable', async () => {
+    agentStatus = null;
+    renderApp();
+
+    await screen.findAllByText('test.ts');
+    expect(screen.queryByTestId('send-to-agent')).not.toBeInTheDocument();
   });
 });
