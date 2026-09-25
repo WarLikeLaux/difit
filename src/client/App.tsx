@@ -252,6 +252,7 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
   );
   const [pendingCommentThreadId, setPendingCommentThreadId] = useState<string | null>(null);
   const [codePreviewThreadId, setCodePreviewThreadId] = useState<string | null>(null);
+  const [codePreviewFilePath, setCodePreviewFilePath] = useState<string | null>(null);
   const [isCodePreviewCollapsed, setIsCodePreviewCollapsed] = useState(false);
   const codePreviewExpansionKeyRef = useRef<string | null>(null);
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
@@ -877,10 +878,12 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
   );
   const codePreviewFile = useMemo(
     () =>
-      codePreviewThread
-        ? (diffData?.files.find((file) => file.path === codePreviewThread.file) ?? null)
+      codePreviewThread || codePreviewFilePath
+        ? (diffData?.files.find(
+            (file) => file.path === (codePreviewThread?.file ?? codePreviewFilePath),
+          ) ?? null)
         : null,
-    [codePreviewThread, diffData?.files],
+    [codePreviewThread, codePreviewFilePath, diffData?.files],
   );
   const codePreviewMergedChunks = useMemo(
     () => (codePreviewFile ? getCodePreviewMergedChunks(codePreviewFile) : EMPTY_MERGED_CHUNKS),
@@ -1721,7 +1724,19 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
       ensureFileRendered(thread.file);
       codePreviewExpansionKeyRef.current = null;
       setIsCodePreviewCollapsed(false);
+      setCodePreviewFilePath(null);
       setCodePreviewThreadId(thread.id);
+    },
+    [ensureFileRendered],
+  );
+
+  const handleShowFileCode = useCallback(
+    (filePath: string) => {
+      ensureFileRendered(filePath);
+      codePreviewExpansionKeyRef.current = null;
+      setIsCodePreviewCollapsed(false);
+      setCodePreviewThreadId(null);
+      setCodePreviewFilePath(filePath);
     },
     [ensureFileRendered],
   );
@@ -1729,6 +1744,7 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
   const handleCloseCodePreview = useCallback(() => {
     codePreviewExpansionKeyRef.current = null;
     setCodePreviewThreadId(null);
+    setCodePreviewFilePath(null);
   }, []);
 
   const handleOpenInEditor = useCallback(
@@ -2171,49 +2187,54 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
           />
         )}
 
-        {codePreviewThread && codePreviewFile && codePreviewNavigableFile && (
-          <CodePreviewModal
-            thread={codePreviewThread}
-            targetPosition={codePreviewPosition}
-            isLoading={isCodePreviewExpandLoading || codePreviewHasHiddenLines}
-            onClose={handleCloseCodePreview}
-          >
-            <DiffViewer
-              file={codePreviewFile}
-              threads={EMPTY_COMMENT_THREADS}
-              showAuthorBadges={showAuthorBadges}
-              reviewUrl={diffData.reviewUrl}
-              diffMode={diffMode}
-              reviewedFiles={viewedFiles}
-              isChangedSinceViewed={changedSinceViewedFiles.has(codePreviewFile.path)}
-              onToggleReviewed={handleViewedButtonToggle}
-              collapsedFiles={isCodePreviewCollapsed ? new Set([codePreviewFile.path]) : new Set()}
-              onToggleCollapsed={() => setIsCodePreviewCollapsed((collapsed) => !collapsed)}
-              onToggleAllCollapsed={setIsCodePreviewCollapsed}
-              onAddComment={handleAddComment}
-              onGenerateThreadPrompt={handleGenerateThreadPrompt}
-              onRemoveThread={removeThread}
-              onDeleteThread={deleteThread}
-              onThreadStatusChange={handleThreadStatusChange}
-              onReplyToThread={handleReplyToThread}
-              onRemoveMessage={removeMessage}
-              onUpdateMessage={updateMessage}
-              onOpenInEditor={canOpenInEditor ? handleOpenInEditor : undefined}
-              syntaxTheme={settings.syntaxTheme}
-              baseCommitish={diffData.baseCommitish}
-              targetCommitish={diffData.targetCommitish}
-              cursor={codePreviewPosition}
-              isFocused={true}
-              fileIndex={0}
-              mergedChunks={codePreviewMergedChunks}
-              expandLines={expandCodePreviewLines}
-              expandAllBetweenChunks={expandAllCodePreviewBetweenChunks}
-              prefetchFileContent={prefetchCodePreviewFileContent}
-              isExpandLoading={isCodePreviewExpandLoading}
-              diffVersion={diffDataVersion}
-            />
-          </CodePreviewModal>
-        )}
+        {(codePreviewThread || codePreviewFilePath) &&
+          codePreviewFile &&
+          codePreviewNavigableFile && (
+            <CodePreviewModal
+              thread={codePreviewThread ?? undefined}
+              filePath={codePreviewThread?.file ?? codePreviewFilePath ?? ''}
+              targetPosition={codePreviewPosition}
+              isLoading={isCodePreviewExpandLoading || codePreviewHasHiddenLines}
+              onClose={handleCloseCodePreview}
+            >
+              <DiffViewer
+                file={codePreviewFile}
+                threads={EMPTY_COMMENT_THREADS}
+                showAuthorBadges={showAuthorBadges}
+                reviewUrl={diffData.reviewUrl}
+                diffMode={diffMode}
+                reviewedFiles={viewedFiles}
+                isChangedSinceViewed={changedSinceViewedFiles.has(codePreviewFile.path)}
+                onToggleReviewed={handleViewedButtonToggle}
+                collapsedFiles={
+                  isCodePreviewCollapsed ? new Set([codePreviewFile.path]) : new Set()
+                }
+                onToggleCollapsed={() => setIsCodePreviewCollapsed((collapsed) => !collapsed)}
+                onToggleAllCollapsed={setIsCodePreviewCollapsed}
+                onAddComment={handleAddComment}
+                onGenerateThreadPrompt={handleGenerateThreadPrompt}
+                onRemoveThread={removeThread}
+                onDeleteThread={deleteThread}
+                onThreadStatusChange={handleThreadStatusChange}
+                onReplyToThread={handleReplyToThread}
+                onRemoveMessage={removeMessage}
+                onUpdateMessage={updateMessage}
+                onOpenInEditor={canOpenInEditor ? handleOpenInEditor : undefined}
+                syntaxTheme={settings.syntaxTheme}
+                baseCommitish={diffData.baseCommitish}
+                targetCommitish={diffData.targetCommitish}
+                cursor={codePreviewPosition}
+                isFocused={true}
+                fileIndex={0}
+                mergedChunks={codePreviewMergedChunks}
+                expandLines={expandCodePreviewLines}
+                expandAllBetweenChunks={expandAllCodePreviewBetweenChunks}
+                prefetchFileContent={prefetchCodePreviewFileContent}
+                isExpandLoading={isCodePreviewExpandLoading}
+                diffVersion={diffDataVersion}
+              />
+            </CodePreviewModal>
+          )}
 
         {mainView === null && (
           <main className="flex flex-1 items-center justify-center text-sm text-github-text-secondary">
@@ -2410,6 +2431,7 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
                       onRemoveMessage={removeMessage}
                       onUpdateMessage={updateMessage}
                       onOpenInEditor={canOpenInEditor ? handleOpenInEditor : undefined}
+                      onShowCode={handleShowFileCode}
                       syntaxTheme={settings.syntaxTheme}
                       baseCommitish={diffData.baseCommitish}
                       targetCommitish={diffData.targetCommitish}

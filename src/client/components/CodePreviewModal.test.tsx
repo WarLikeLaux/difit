@@ -27,6 +27,7 @@ describe('CodePreviewModal', () => {
         <HotkeysProvider initiallyActiveScopes={['navigation']}>
           <CodePreviewModal
             thread={thread}
+            filePath={thread.file}
             targetPosition={{ fileIndex: 0, chunkIndex: 1, lineIndex: 2, side: 'right' }}
             isLoading={true}
             onClose={vi.fn()}
@@ -44,6 +45,7 @@ describe('CodePreviewModal', () => {
         <HotkeysProvider initiallyActiveScopes={['navigation']}>
           <CodePreviewModal
             thread={thread}
+            filePath={thread.file}
             targetPosition={{ fileIndex: 0, chunkIndex: 1, lineIndex: 2, side: 'right' }}
             isLoading={false}
             onClose={vi.fn()}
@@ -71,6 +73,7 @@ describe('CodePreviewModal', () => {
         <HotkeysProvider initiallyActiveScopes={['navigation']}>
           <CodePreviewModal
             thread={thread}
+            filePath={thread.file}
             targetPosition={{ fileIndex: 0, chunkIndex: 1, lineIndex: 2, side: 'right' }}
             isLoading={false}
             onClose={vi.fn()}
@@ -83,6 +86,36 @@ describe('CodePreviewModal', () => {
       await waitFor(() => {
         expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
       });
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('previews a whole file without a thread and skips anchor scrolling', async () => {
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      render(
+        <HotkeysProvider initiallyActiveScopes={['navigation']}>
+          <CodePreviewModal
+            filePath="src/whole-file.ts"
+            targetPosition={null}
+            isLoading={false}
+            onClose={vi.fn()}
+          >
+            <div>content</div>
+          </CodePreviewModal>
+        </HotkeysProvider>,
+      );
+
+      expect(screen.getByText('src/whole-file.ts')).toBeInTheDocument();
+      expect(screen.getByText('content')).toBeInTheDocument();
+
+      // Let any deferred scroll attempt run; whole-file previews must not scroll.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       Element.prototype.scrollIntoView = originalScrollIntoView;
     }

@@ -75,4 +75,19 @@ describe('DiffViewerHeader', () => {
 
     expect(onOpenInEditor).toHaveBeenCalledWith('src/app.ts', 1);
   });
+
+  it('previews the full file from the header when Show Code is available', () => {
+    const onShowCode = vi.fn();
+    render(<DiffViewerHeader {...baseProps} onShowCode={onShowCode} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show Code' }));
+
+    expect(onShowCode).toHaveBeenCalledWith('src/app.ts');
+  });
+
+  it('hides the Show Code action when no preview handler is provided', () => {
+    render(<DiffViewerHeader {...baseProps} />);
+
+    expect(screen.queryByRole('button', { name: 'Show Code' })).not.toBeInTheDocument();
+  });
 });

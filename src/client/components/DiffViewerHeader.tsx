@@ -8,6 +8,7 @@ import {
   FileDiff,
   FilePen,
   FilePlus,
+  FileSearch,
   FileX,
   Square,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ interface DiffViewerHeaderProps {
   onToggleAllCollapsed: (shouldCollapse: boolean) => void;
   onToggleReviewed: (path: string) => void;
   onOpenInEditor?: (filePath: string, lineNumber: number) => void;
+  onShowCode?: (filePath: string) => void;
 }
 
 const getFileIcon = (status: DiffFile['status']) => {
@@ -54,6 +56,7 @@ export const DiffViewerHeader = ({
   onToggleAllCollapsed,
   onToggleReviewed,
   onOpenInEditor,
+  onShowCode,
 }: DiffViewerHeaderProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const firstFileLine =
@@ -135,6 +138,17 @@ export const DiffViewerHeader = ({
             -{file.deletions}
           </span>
         </div>
+        {onShowCode && (
+          <button
+            type="button"
+            onClick={() => onShowCode(file.path)}
+            className="flex items-center gap-1.5 whitespace-nowrap rounded border border-github-border bg-github-bg-tertiary px-2.5 py-1.5 text-xs font-medium text-github-text-primary transition-colors hover:bg-github-bg-primary"
+            title={`Preview the full file ${file.path}`}
+          >
+            <FileSearch size={14} />
+            Show Code
+          </button>
+        )}
         {onOpenInEditor && (
           <button
             type="button"

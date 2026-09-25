@@ -46,6 +46,7 @@ interface DiffViewerProps {
   onRemoveMessage: (threadId: string, messageId: string) => void;
   onUpdateMessage: (threadId: string, messageId: string, newBody: string) => void;
   onOpenInEditor?: (filePath: string, lineNumber: number) => void;
+  onShowCode?: (filePath: string) => void;
   syntaxTheme?: AppearanceSettings['syntaxTheme'];
   baseCommitish?: string;
   targetCommitish?: string;
@@ -227,6 +228,7 @@ export const DiffViewer = memo(function DiffViewer({
   onRemoveMessage,
   onUpdateMessage,
   onOpenInEditor,
+  onShowCode,
   syntaxTheme,
   baseCommitish,
   targetCommitish,
@@ -455,6 +457,7 @@ export const DiffViewer = memo(function DiffViewer({
         file={file}
         reviewUrl={reviewUrl}
         onOpenInEditor={onOpenInEditor}
+        onShowCode={onShowCode}
         isCollapsed={isCollapsed}
         isFocused={isFocused}
         isReviewed={reviewedFiles.has(file.path)}

@@ -240,7 +240,10 @@ const THREAD_STATUS_ACTIONS: Record<CommentThreadStatus, readonly ThreadStatusAc
     { status: 'changes_requested', label: 'Request Changes' },
     { status: 'closed', label: 'Close' },
   ],
-  accepted: [{ status: 'open', label: 'Reopen' }],
+  accepted: [
+    { status: 'open', label: 'Reopen' },
+    { status: 'closed', label: 'Close' },
+  ],
   changes_requested: [
     { status: 'to_verify', label: 'Verify Fix' },
     { status: 'open', label: 'Reopen' },

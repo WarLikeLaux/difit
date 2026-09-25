@@ -6,7 +6,9 @@ import type { CommentThread } from '../../types/diff';
 import type { CursorPosition } from '../hooks/keyboardNavigation';
 
 interface CodePreviewModalProps {
-  thread: CommentThread;
+  /** Thread anchoring the preview; absent when the preview is opened for a whole file. */
+  thread?: CommentThread;
+  filePath: string;
   targetPosition: CursorPosition | null;
   isLoading: boolean;
   onClose: () => void;
@@ -15,6 +17,7 @@ interface CodePreviewModalProps {
 
 export function CodePreviewModal({
   thread,
+  filePath,
   targetPosition,
   isLoading,
   onClose,
@@ -23,9 +26,9 @@ export function CodePreviewModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const { enableScope, disableScope } = useHotkeysContext();
-  const lineLabel = Array.isArray(thread.line)
+  const lineLabel = Array.isArray(thread?.line)
     ? `${thread.line[0]}-${thread.line[1]}`
-    : thread.line;
+    : thread?.line;
 
   useEffect(() => {
     disableScope('navigation');
@@ -46,6 +49,8 @@ export function CodePreviewModal({
 
   useEffect(() => {
     if (isLoading) return;
+    // Whole-file previews have no anchor: show the top of the file as-is.
+    if (!thread && !targetPosition) return;
 
     let cancelled = false;
     let frameId = 0;
@@ -56,9 +61,11 @@ export function CodePreviewModal({
         const dialog = dialogRef.current;
         if (!dialog) return;
 
-        const threadTarget = Array.from(dialog.querySelectorAll<HTMLElement>('[id]')).find(
-          (element) => element.id === `comment-thread-${thread.id}`,
-        );
+        const threadTarget = thread
+          ? Array.from(dialog.querySelectorAll<HTMLElement>('[id]')).find(
+              (element) => element.id === `comment-thread-${thread.id}`,
+            )
+          : undefined;
         const lineId = targetPosition
           ? `file-0-chunk-${targetPosition.chunkIndex}-line-${targetPosition.lineIndex}`
           : null;
@@ -81,7 +88,7 @@ export function CodePreviewModal({
       cancelled = true;
       cancelAnimationFrame(frameId);
     };
-  }, [isLoading, targetPosition, thread.id]);
+  }, [isLoading, targetPosition, thread]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
@@ -99,7 +106,8 @@ export function CodePreviewModal({
               Code preview
             </h2>
             <p className="truncate font-mono text-xs text-github-text-secondary">
-              {thread.file}:{lineLabel}
+              {filePath}
+              {thread ? `:${lineLabel}` : ''}
               {isLoading ? ' · Loading full file…' : ''}
             </p>
           </div>

@@ -58,6 +58,27 @@ describe('CommentThreadCard', () => {
     expect(onThreadStatusChange).toHaveBeenCalledWith('closed');
   });
 
+  it('closes an accepted thread while the agent is still working on it', async () => {
+    const user = userEvent.setup();
+    const onThreadStatusChange = vi.fn();
+
+    render(
+      <CommentThreadCard
+        thread={{ ...mockThread, acceptedAt: '2026-09-11T00:00:00.000Z' }}
+        onGeneratePrompt={() => 'thread prompt'}
+        onRemoveThread={vi.fn()}
+        onThreadStatusChange={onThreadStatusChange}
+        onReplyToThread={vi.fn().mockResolvedValue(undefined)}
+        onRemoveMessage={vi.fn()}
+        onUpdateMessage={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onThreadStatusChange).toHaveBeenCalledWith('closed');
+  });
+
   it('shows missing authors as Agent when author badges are enabled', () => {
     render(
       <CommentThreadCard

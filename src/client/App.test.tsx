@@ -789,7 +789,15 @@ describe('App Component - Comment sync', () => {
     });
 
     renderApp();
-    fireEvent.click(await screen.findByRole('button', { name: 'Show Code' }));
+    // The diff view stays mounted but hidden, and its file headers now also offer
+    // "Show Code"; scope to the comments view so the thread's button is clicked.
+    const commentsView = await screen
+      .findByRole('heading', { name: 'Comments' })
+      .then((heading) => heading.closest('main'));
+    expect(commentsView).not.toBeNull();
+    fireEvent.click(
+      await within(commentsView as HTMLElement).findByRole('button', { name: 'Show Code' }),
+    );
 
     const dialog = await screen.findByRole('dialog', { name: 'Code preview' });
     expect(within(dialog).getByText(/^test\.ts:10/, { selector: 'p' })).toBeInTheDocument();
@@ -850,7 +858,14 @@ describe('App Component - Comment sync', () => {
       name: /Expand all .* hidden lines/,
     });
     const mainExpandButtonLabels = mainExpandButtons.map((button) => button.textContent);
-    fireEvent.click(await screen.findByRole('button', { name: 'Show Code' }));
+    // Scope to the comments view: hidden diff headers also offer "Show Code" now.
+    const commentsView = await screen
+      .findByRole('heading', { name: 'Comments' })
+      .then((heading) => heading.closest('main'));
+    expect(commentsView).not.toBeNull();
+    fireEvent.click(
+      await within(commentsView as HTMLElement).findByRole('button', { name: 'Show Code' }),
+    );
 
     const dialog = await screen.findByRole('dialog', { name: 'Code preview' });
     await waitFor(() => {
