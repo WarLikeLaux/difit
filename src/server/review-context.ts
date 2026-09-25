@@ -108,16 +108,17 @@ export async function createReviewContext({
 
 export async function getReviewBranchState(
   context: ReviewContext,
-  git: SimpleGit = simpleGit(context.repositoryPath),
+  git?: SimpleGit,
 ): Promise<ReviewBranchState> {
   if (!context.followsBranch || !context.branch) {
     return { stale: false };
   }
 
   try {
-    const branchValue = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+    const repository = git ?? simpleGit(context.repositoryPath);
+    const branchValue = (await repository.revparse(['--abbrev-ref', 'HEAD'])).trim();
     const currentBranch = branchValue && branchValue !== 'HEAD' ? branchValue : undefined;
-    const currentHead = await resolveRevision(git, 'HEAD');
+    const currentHead = await resolveRevision(repository, 'HEAD');
     return {
       stale: currentBranch !== context.branch,
       currentBranch,

@@ -74,6 +74,17 @@ describe('review context', () => {
     expect(state).toMatchObject({ stale: true, currentBranch: 'feature/two' });
   });
 
+  it('treats a missing repository directory as stale instead of throwing', async () => {
+    const context = await createReviewContext({
+      repositoryPath: '/nonexistent/difit-missing-repo',
+      repositoryId: 'repository-id',
+      selection: { baseCommitish: 'base', targetCommitish: '.' },
+      git: createGitMock({ branch: 'feature/one' }) as never,
+    });
+
+    await expect(getReviewBranchState(context)).resolves.toEqual({ stale: true });
+  });
+
   it('keeps an MR target immutable when the checkout has moved to another head', async () => {
     const context = await createReviewContext({
       repositoryPath: '/workspace/project',
