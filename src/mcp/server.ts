@@ -2,7 +2,10 @@ import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import pkg from '../../package.json' with { type: 'json' };
+import type { ReviewLesson } from '../types/lesson.js';
+import { readLessonsByRepositoryPath } from '../server/lesson-storage.js';
 import { readReviewRegistrations } from '../server/review-registry.js';
+import { formatLessonsMarkdown, selectLessons } from '../utils/lesson-format.js';
 
 import { DifitReviewApi } from './review-api.js';
 import { startReview, type StartReviewOptions } from './start-review.js';
@@ -12,6 +15,7 @@ type DifitMcpRole = 'full' | 'reviewer';
 interface DifitMcpDependencies {
   api?: DifitReviewApi;
   listReviews?: typeof readReviewRegistrations;
+  loadLessons?: (repositoryPath?: string) => Promise<ReviewLesson[]>;
   startReview?: (options: StartReviewOptions) => Promise<unknown>;
   role?: DifitMcpRole;
   defaultAuthor?: string;
@@ -68,6 +72,7 @@ async function runTool(operation: () => Promise<unknown>): Promise<CallToolResul
 export function createDifitMcpServer(dependencies: DifitMcpDependencies = {}): McpServer {
   const api = dependencies.api ?? new DifitReviewApi();
   const listReviews = dependencies.listReviews ?? readReviewRegistrations;
+  const loadLessons = dependencies.loadLessons ?? readLessonsByRepositoryPath;
   const launchReview = dependencies.startReview ?? startReview;
   const role: DifitMcpRole =
     dependencies.role ?? (process.env.DIFIT_ROLE === 'reviewer' ? 'reviewer' : 'full');
@@ -135,6 +140,51 @@ export function createDifitMcpServer(dependencies: DifitMcpDependencies = {}): M
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
     ({ port, includeResolved }) => runTool(() => api.getComments(port, includeResolved)),
+  );
+
+  server.registerTool(
+    'get_lessons',
+    {
+      title: 'Get review lessons',
+      description:
+        'Read accumulated review lessons: for each finished review thread, the code as it was when the comment was written, the feedback conversation, and the code after the fix. ' +
+        'Read these at the start of a task so past review feedback is not repeated.',
+      inputSchema: z.object({
+        repositoryPath: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Filter by repository path; omit to read lessons for every repository'),
+        filePath: z.string().min(1).optional().describe('Substring filter on file path'),
+        query: z.string().min(1).optional().describe('Substring filter across lesson text'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(200)
+          .default(20)
+          .describe('Maximum lessons to return (newest first)'),
+        format: z.enum(['markdown', 'json']).default('markdown'),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    async ({ repositoryPath, filePath, query, limit, format }) => {
+      try {
+        const lessons = selectLessons(await loadLessons(repositoryPath), {
+          filePath,
+          query,
+          limit,
+        });
+        if (format === 'json') {
+          return toolSuccess({ lessons, count: lessons.length });
+        }
+        return {
+          content: [{ type: 'text', text: formatLessonsMarkdown(lessons) }],
+        } satisfies CallToolResult;
+      } catch (error) {
+        return toolError(error);
+      }
+    },
   );
 
   if (role !== 'reviewer') {

@@ -23,6 +23,7 @@ import { createCommentCommand } from './comment.js';
 import { createAuthCommand } from './auth-command.js';
 import { authenticatedFetch } from './auth-client.js';
 import { createHubCommand } from './hub.js';
+import { createLessonsCommand } from './lessons.js';
 import { createReviewCommand } from './review-command.js';
 import { createMcpCommand } from './mcp-command.js';
 import { getPrPatch, getPrCommentImports } from './github.js';
@@ -112,6 +113,7 @@ program
   .addCommand(createAuthCommand())
   .addCommand(createCommentCommand())
   .addCommand(createHubCommand())
+  .addCommand(createLessonsCommand())
   .addCommand(createReviewCommand())
   .addCommand(createMcpCommand())
   .argument(

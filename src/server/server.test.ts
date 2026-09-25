@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
-import { request as createHttpRequest } from 'http';
+import { request as createHttpRequest, type Server } from 'http';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 process.env.VITEST_SERVER_TEST = 'true';
 
 import { AuthService } from './auth.js';
+import { computeRepositoryId, readLessons } from './lesson-storage.js';
 import { startServer as startSecuredServer, type ServerOptions } from './server.js';
 import type { CommentImport } from '../types/diff.js';
 
@@ -2139,5 +2140,169 @@ describe('Server Integration Tests', () => {
       const response = await fetch(`http://localhost:${port}/api/diff`);
       expect(response.ok).toBe(true);
     });
+  });
+});
+
+describe('Lesson capture', () => {
+  const previousConfigDirectory = process.env.DIFIT_CONFIG_DIR;
+
+  afterEach(async () => {
+    if (previousConfigDirectory === undefined) delete process.env.DIFIT_CONFIG_DIR;
+    else process.env.DIFIT_CONFIG_DIR = previousConfigDirectory;
+  });
+
+  async function startServerWithLessonStore() {
+    const configDirectory = await fs.mkdtemp(join(tmpdir(), 'difit-lessons-server-'));
+    process.env.DIFIT_CONFIG_DIR = configDirectory;
+    const port = await getAvailablePort(4966);
+    const result = await startServer({
+      preferredPort: port,
+      openBrowser: false,
+      selection: { baseCommitish: 'HEAD^', targetCommitish: 'HEAD' },
+    });
+    return { result, configDirectory };
+  }
+
+  async function teardown(result: { server?: Server }, configDirectory: string) {
+    if (result.server) {
+      await new Promise<void>((resolvePromise) => result.server!.close(() => resolvePromise()));
+    }
+    await fs.rm(configDirectory, { recursive: true, force: true });
+  }
+
+  function createOpenThread(id: string, now: string) {
+    return {
+      id,
+      filePath: 'src/App.tsx',
+      position: { side: 'new', line: 10 },
+      createdAt: now,
+      updatedAt: now,
+      codeSnapshot: { content: 'original line', language: 'ts' },
+      messages: [
+        { id: `${id}-m1`, body: 'Fix this', author: 'User', createdAt: now, updatedAt: now },
+      ],
+    };
+  }
+
+  it('captures a lesson when a thread is resolved and updates it after reopen and close', async () => {
+    const { result, configDirectory } = await startServerWithLessonStore();
+
+    try {
+      const parserInstance = parserInstances[parserInstances.length - 1];
+      parserInstance.getBlobContent.mockResolvedValue(
+        Buffer.from('line 1\nfixed line\nline 3', 'utf-8'),
+      );
+
+      const now = '2026-09-25T10:00:00.000Z';
+      const thread = createOpenThread('thread-lesson-1', now);
+      await postComments(result.port, { threads: [thread] });
+
+      const deleteResponse = await fetch(
+        `http://localhost:${result.port}/api/comments/thread-lesson-1`,
+        { method: 'DELETE' },
+      );
+      expect(deleteResponse.status).toBe(200);
+
+      const repositoryId = computeRepositoryId(resolve(process.cwd()));
+      const lessons = await readLessons(repositoryId);
+      expect(lessons).toHaveLength(1);
+      expect(lessons[0]).toMatchObject({
+        threadId: 'thread-lesson-1',
+        outcome: 'resolved',
+        resolvedBy: 'test',
+        filePath: 'src/App.tsx',
+        codeBefore: { content: 'original line', language: 'ts' },
+        codeAfter: { content: 'line 1\nfixed line\nline 3' },
+      });
+      expect(lessons[0].messages).toEqual([{ author: 'User', body: 'Fix this', createdAt: now }]);
+
+      const reopenResponse = await fetch(
+        `http://localhost:${result.port}/api/comments/thread-lesson-1/status`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'open' }),
+        },
+      );
+      expect(reopenResponse.status).toBe(200);
+      expect(await readLessons(repositoryId)).toHaveLength(1);
+
+      const closeResponse = await fetch(
+        `http://localhost:${result.port}/api/comments/thread-lesson-1/status`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'closed' }),
+        },
+      );
+      expect(closeResponse.status).toBe(200);
+
+      const updatedLessons = await readLessons(repositoryId);
+      expect(updatedLessons).toHaveLength(1);
+      expect(updatedLessons[0]).toMatchObject({ threadId: 'thread-lesson-1', outcome: 'closed' });
+    } finally {
+      await teardown(result, configDirectory);
+    }
+  });
+
+  it('captures a lesson when a resolved thread arrives through the comments POST', async () => {
+    const { result, configDirectory } = await startServerWithLessonStore();
+
+    try {
+      const parserInstance = parserInstances[parserInstances.length - 1];
+      parserInstance.getBlobContent.mockResolvedValue(Buffer.from('updated file', 'utf-8'));
+
+      const now = '2026-09-25T10:00:00.000Z';
+      const thread = createOpenThread('thread-lesson-2', now);
+      await postComments(result.port, { threads: [thread] });
+      await postComments(result.port, {
+        threads: [{ ...thread, resolvedAt: '2026-09-25T11:00:00.000Z' }],
+      });
+
+      const lessons = await readLessons(computeRepositoryId(resolve(process.cwd())));
+      expect(lessons).toHaveLength(1);
+      expect(lessons[0]).toMatchObject({
+        threadId: 'thread-lesson-2',
+        outcome: 'resolved',
+        capturedAt: '2026-09-25T11:00:00.000Z',
+        codeAfter: { content: 'updated file' },
+      });
+    } finally {
+      await teardown(result, configDirectory);
+    }
+  });
+
+  it('does not capture lessons from startup imports or unchanged re-pushes', async () => {
+    const configDirectory = await fs.mkdtemp(join(tmpdir(), 'difit-lessons-server-'));
+    process.env.DIFIT_CONFIG_DIR = configDirectory;
+    const port = await getAvailablePort(4966);
+    const result = await startServer({
+      preferredPort: port,
+      openBrowser: false,
+      selection: { baseCommitish: 'HEAD^', targetCommitish: 'HEAD' },
+      commentImports: [
+        {
+          type: 'thread',
+          filePath: 'src/App.tsx',
+          position: { side: 'new', line: 5 },
+          body: 'Imported remark',
+          author: 'Reviewer',
+        },
+      ],
+    });
+
+    try {
+      const repositoryId = computeRepositoryId(resolve(process.cwd()));
+      expect(await readLessons(repositoryId)).toEqual([]);
+
+      const now = '2026-09-25T10:00:00.000Z';
+      const thread = createOpenThread('thread-lesson-3', now);
+      await postComments(result.port, { threads: [thread] });
+      await postComments(result.port, { threads: [thread] });
+
+      expect(await readLessons(repositoryId)).toEqual([]);
+    } finally {
+      await teardown(result, configDirectory);
+    }
   });
 });

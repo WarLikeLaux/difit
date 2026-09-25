@@ -31,6 +31,7 @@ describe('difit MCP server', () => {
       'list_reviews',
       'get_review_context',
       'get_comments',
+      'get_lessons',
       'get_events',
       'ack_events',
       'add_comment',
@@ -140,6 +141,52 @@ describe('difit MCP server', () => {
     expect(result.content).toEqual([{ type: 'text', text: 'Thread not found' }]);
   });
 
+  it('reads review lessons as markdown or json without a running viewer', async () => {
+    const loadLessons = vi.fn(async () => [
+      {
+        threadId: 'thread-1',
+        outcome: 'resolved' as const,
+        resolvedBy: 'browser' as const,
+        capturedAt: '2026-09-20T10:00:00.000Z',
+        filePath: 'src/service.ts',
+        position: { side: 'new' as const, line: 12 },
+        codeAfter: { content: 'const fixed = 2;' },
+        messages: [
+          {
+            author: 'Reviewer',
+            body: 'Rename this variable.',
+            createdAt: '2026-09-20T09:30:00.000Z',
+          },
+        ],
+      },
+    ]);
+    const client = await connect({ loadLessons });
+
+    const markdown = await client.callTool({
+      name: 'get_lessons',
+      arguments: { repositoryPath: '/repo' },
+    });
+    expect(loadLessons).toHaveBeenCalledWith('/repo');
+    expect(markdown.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('## Lesson: src/service.ts:L12'),
+      },
+    ]);
+    expect(markdown.content).toEqual([
+      { type: 'text', text: expect.stringContaining('Rename this variable.') },
+    ]);
+
+    const json = await client.callTool({
+      name: 'get_lessons',
+      arguments: { repositoryPath: '/repo', format: 'json', filePath: 'service' },
+    });
+    expect(json.structuredContent).toMatchObject({
+      count: 1,
+      lessons: [expect.objectContaining({ threadId: 'thread-1' })],
+    });
+  });
+
   it('exposes only review tools in reviewer role', async () => {
     const launchReview = vi.fn(async () => ({
       port: 4966,
@@ -154,6 +201,7 @@ describe('difit MCP server', () => {
       'list_reviews',
       'get_review_context',
       'get_comments',
+      'get_lessons',
       'add_comment',
     ]);
     expect(toolNames).not.toContain('reply');

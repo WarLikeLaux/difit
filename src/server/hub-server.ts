@@ -20,6 +20,7 @@ import {
   readCommentSessions,
   writeCommentSessions,
 } from './comment-storage.js';
+import { captureResolvedLessons } from './lesson-capture.js';
 import {
   AgentEventInbox,
   deleteAgentEventInbox,
@@ -280,6 +281,15 @@ async function storeArchivedComments(
   await inbox.recordChanges(session.threads, nextSession.threads);
   await inbox.flush();
   inbox.dispose();
+  await captureResolvedLessons({
+    previousThreads: session.threads,
+    nextThreads: nextSession.threads,
+    repositoryId: registration.repositoryId,
+    repositoryPath: registration.repositoryPath,
+    reviewId: registration.id,
+    branch: registration.branch,
+    resolvedBy: 'hub',
+  });
   return nextSession;
 }
 

@@ -122,3 +122,11 @@ claude mcp add -s user difit-reviewer -- difit mcp --role reviewer
   }
 }
 ```
+
+---
+
+## 4. Уроки ревью
+
+При закрытии треда difit сохраняет урок (код до, переписку, код после) в `~/.difit/lessons/`; уроки
+переживают удаление review. Агент читает их перед задачей командой `difit lessons --repo <path>`
+или MCP-инструментом `get_lessons`.

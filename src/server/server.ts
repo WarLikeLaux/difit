@@ -31,6 +31,7 @@ import { AgentEventInbox } from './agent-event-inbox.js';
 import { GitDiffParser } from './git-diff.js';
 import {
   type AuthService,
+  type AuthPrincipal,
   getAuthenticatedPrincipal,
   getDefaultAuthService,
   monitorAuthenticatedConnection,
@@ -39,6 +40,8 @@ import {
 } from './auth.js';
 import { logoutHandler } from './auth-http.js';
 import { readCommentSessions, writeCommentSessions } from './comment-storage.js';
+import { captureResolvedLessons } from './lesson-capture.js';
+import { computeRepositoryId } from './lesson-storage.js';
 import {
   createReviewContext,
   getReviewBranchState,
@@ -163,7 +166,7 @@ export async function startServer(options: ServerOptions): Promise<{
   const auth = options.authService ?? getDefaultAuthService();
   await auth.initialize();
   const repositoryPath = resolve(options.repoPath ?? process.cwd());
-  const repositoryId = createHash('sha256').update(repositoryPath).digest('hex');
+  const repositoryId = computeRepositoryId(repositoryPath);
   const initialCommentImports = options.commentImports || [];
   const requestedInitialSelection = options.selection ?? createDiffSelection('', '');
   const createdReviewContext =
@@ -893,6 +896,7 @@ export async function startServer(options: ServerOptions): Promise<{
     selection: DiffSelection,
     nextThreads: DiffCommentThread[],
     wakeAgent = false,
+    actor?: AuthPrincipal,
   ): Promise<boolean> {
     const session = getOrCreateCommentSession(selection);
     const previousThreads = session.threads;
@@ -914,6 +918,16 @@ export async function startServer(options: ServerOptions): Promise<{
     if (wakeAgent) {
       await agentEventInbox?.recordChanges(previousThreads, nextThreads);
     }
+    await captureResolvedLessons({
+      previousThreads,
+      nextThreads,
+      repositoryId,
+      repositoryPath,
+      reviewId: reviewContext?.id,
+      branch: reviewContext?.branch,
+      resolvedBy: actor?.kind,
+      readWorkingContent: (filePath) => parser.getBlobContent(filePath, 'working'),
+    });
     return true;
   }
 
@@ -946,7 +960,7 @@ export async function startServer(options: ServerOptions): Promise<{
         : nextThreads;
 
       const principal = getAuthenticatedPrincipal(res.locals as Record<string, unknown>);
-      await updateCommentSession(selection, resolvedThreads, principal.kind !== 'cli');
+      await updateCommentSession(selection, resolvedThreads, principal.kind !== 'cli', principal);
 
       res.json({
         success: true,
@@ -1083,7 +1097,7 @@ export async function startServer(options: ServerOptions): Promise<{
         : thread,
     );
     const principal = getAuthenticatedPrincipal(res.locals as Record<string, unknown>);
-    await updateCommentSession(selection, nextThreads, principal.kind !== 'cli');
+    await updateCommentSession(selection, nextThreads, principal.kind !== 'cli', principal);
 
     res.json({
       success: true,
@@ -1133,7 +1147,7 @@ export async function startServer(options: ServerOptions): Promise<{
     );
 
     const principal = getAuthenticatedPrincipal(res.locals as Record<string, unknown>);
-    await updateCommentSession(selection, nextThreads, principal.kind !== 'cli');
+    await updateCommentSession(selection, nextThreads, principal.kind !== 'cli', principal);
     res.json({ success: true, threadId, status, version: session.version });
   });
 
