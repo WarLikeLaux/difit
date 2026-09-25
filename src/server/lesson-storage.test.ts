@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ReviewLesson } from '../types/lesson.js';
 
 import {
-  MAX_LESSONS_PER_REPOSITORY,
   computeRepositoryId,
   readAllLessons,
   readLessons,
@@ -81,21 +80,16 @@ describe('lesson storage', () => {
     expect(lessons.find((lesson) => lesson.threadId === 't1')?.outcome).toBe('closed');
   });
 
-  it('evicts the oldest lessons beyond the repository cap', async () => {
+  it('keeps every lesson no matter how many accumulate', async () => {
     await useConfigDirectory();
     const repositoryId = computeRepositoryId('/repo');
-    const lessons = Array.from({ length: MAX_LESSONS_PER_REPOSITORY + 10 }, (_, index) =>
-      createLesson(`t${index}`),
-    );
+    const lessons = Array.from({ length: 300 }, (_, index) => createLesson(`t${index}`));
 
     await upsertLessons(repositoryId, lessons);
 
     const stored = await readLessons(repositoryId);
-    expect(stored).toHaveLength(MAX_LESSONS_PER_REPOSITORY);
-    expect(stored.some((lesson) => lesson.threadId === 't0')).toBe(false);
-    expect(stored.some((lesson) => lesson.threadId === `t${MAX_LESSONS_PER_REPOSITORY + 9}`)).toBe(
-      true,
-    );
+    expect(stored).toHaveLength(300);
+    expect(stored.some((lesson) => lesson.threadId === 't0')).toBe(true);
   });
 
   it('reads every repository store and supports path lookups', async () => {

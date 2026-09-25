@@ -7,8 +7,6 @@ import type { ReviewLesson } from '../types/lesson.js';
 
 import { ensurePrivateDirectory, writePrivateFile } from './private-storage.js';
 
-export const MAX_LESSONS_PER_REPOSITORY = 200;
-
 const STORE_VERSION = 1 as const;
 
 function getLessonStorageDirectory(): string {
@@ -108,11 +106,7 @@ function enqueueStoreWrite(repositoryId: string, operation: () => Promise<void>)
   return operationPromise;
 }
 
-/**
- * Merges lessons into the repository store, keyed by thread id so the latest
- * close of a thread wins. Keeps at most {@link MAX_LESSONS_PER_REPOSITORY}
- * lessons, evicting the oldest entries first.
- */
+/** Merges lessons into the repository store, keyed by thread id so the latest close of a thread wins. */
 export async function upsertLessons(
   repositoryId: string,
   lessons: readonly ReviewLesson[],
@@ -123,7 +117,7 @@ export async function upsertLessons(
     const existing = await readLessons(repositoryId);
     const byThreadId = new Map(existing.map((lesson) => [lesson.threadId, lesson]));
     for (const lesson of lessons) byThreadId.set(lesson.threadId, lesson);
-    const merged = [...byThreadId.values()].slice(-MAX_LESSONS_PER_REPOSITORY);
+    const merged = [...byThreadId.values()];
 
     const path = getLessonStorePath(repositoryId);
     const serialized = `${JSON.stringify({ version: STORE_VERSION, lessons: merged }, null, 2)}\n`;
