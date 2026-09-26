@@ -159,8 +159,11 @@ export function registrationToReviewContext(registration: ReviewRegistration): R
 
 export async function reuseExistingWorkingTreeIdentity(
   context: ReviewContext,
+  hapiSessionId = process.env.VITEST ? undefined : process.env.HAPI_SESSION_ID?.trim(),
 ): Promise<ReviewContext> {
-  if (!context.reviewUrl || !context.followsBranch || !context.branch) return context;
+  if (!context.followsBranch || !context.branch || (!context.reviewUrl && !hapiSessionId)) {
+    return context;
+  }
 
   const matchingRegistrations = (await readReviewRegistrations())
     .filter(
@@ -171,6 +174,7 @@ export async function reuseExistingWorkingTreeIdentity(
         registration.targetRef === context.targetRef &&
         registration.baseMode === context.baseMode &&
         registration.followsBranch &&
+        registration.hapiSessionId === hapiSessionId &&
         (!registration.reviewUrl || registration.reviewUrl === context.reviewUrl),
     )
     .sort(

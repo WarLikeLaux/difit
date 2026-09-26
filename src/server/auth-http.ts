@@ -12,8 +12,18 @@ const LOGIN_HTML = `<!doctype html>
     :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0d1117;color:#e6edf3;font:14px system-ui,sans-serif}.card{width:min(420px,calc(100vw - 32px));padding:28px;border:1px solid #30363d;border-radius:10px;background:#161b22}.logo{font-size:22px;font-weight:700;margin-bottom:8px}.muted{color:#8b949e;line-height:1.5}.error{color:#ff7b72;margin:14px 0}label{display:block;margin:20px 0 8px;font-weight:600}input{width:100%;padding:11px 12px;border:1px solid #30363d;border-radius:6px;background:#0d1117;color:#e6edf3;font:14px ui-monospace,monospace}button{width:100%;margin-top:14px;padding:11px;border:0;border-radius:6px;background:#238636;color:#fff;font-weight:700;cursor:pointer}code{color:#79c0ff}
   </style>
 </head>
-<body><main class="card"><div class="logo">↪ difit</div><p class="muted">Enter the local access key. Retrieve it explicitly with <code>difit auth key</code>.</p>{{ERROR}}<form method="post" action="/auth/login"><label for="accessKey">Access key</label><input id="accessKey" name="accessKey" type="password" autocomplete="current-password" required maxlength="512" autofocus /><button type="submit">Sign in for 30 days</button></form></main></body>
+<body><main class="card"><div class="logo">↪ difit</div><p class="muted">Enter the local access key. Retrieve it explicitly with <code>difit auth key</code>.</p>{{ERROR}}<form method="post" action="{{ACTION}}"><label for="accessKey">Access key</label><input id="accessKey" name="accessKey" type="password" autocomplete="current-password" required maxlength="512" autofocus /><button type="submit">Sign in for 30 days</button></form></main></body>
 </html>`;
+
+function loginDestination(value: unknown): string {
+  return typeof value === 'string' && /^\/open\?[^#\\\r\n]*$/.test(value) ? value : '/';
+}
+
+function loginPage(destination: string, error = ''): string {
+  const action =
+    destination === '/' ? '/auth/login' : `/auth/login?next=${encodeURIComponent(destination)}`;
+  return LOGIN_HTML.replace('{{ERROR}}', error).replace('{{ACTION}}', action);
+}
 
 export function installBrowserLoginRoutes(
   app: Express,
@@ -27,11 +37,12 @@ export function installBrowserLoginRoutes(
       res.status(404).type('text/plain').send('Browser login requires an HTTPS public origin.');
       return;
     }
+    const destination = loginDestination(req.query.next);
     if (await auth.authenticateRequest(req)) {
-      res.redirect(303, '/');
+      res.redirect(303, destination);
       return;
     }
-    res.type('html').send(LOGIN_HTML.replace('{{ERROR}}', ''));
+    res.type('html').send(loginPage(destination));
   });
 
   app.post('/auth/login', async (req, res) => {
@@ -40,11 +51,12 @@ export function installBrowserLoginRoutes(
       return;
     }
     const accessKey = (req.body as { accessKey?: unknown } | undefined)?.accessKey;
+    const destination = loginDestination(req.query.next);
     if (typeof accessKey !== 'string' || accessKey.length > 512) {
       res
         .status(400)
         .type('html')
-        .send(LOGIN_HTML.replace('{{ERROR}}', '<p class="error">Invalid access key.</p>'));
+        .send(loginPage(destination, '<p class="error">Invalid access key.</p>'));
       return;
     }
     const sessionToken = await auth.createBrowserSession(accessKey);
@@ -52,11 +64,11 @@ export function installBrowserLoginRoutes(
       res
         .status(401)
         .type('html')
-        .send(LOGIN_HTML.replace('{{ERROR}}', '<p class="error">Invalid access key.</p>'));
+        .send(loginPage(destination, '<p class="error">Invalid access key.</p>'));
       return;
     }
     res.setHeader('Set-Cookie', auth.createSessionCookie(sessionToken));
-    res.redirect(303, '/');
+    res.redirect(303, destination);
   });
 }
 

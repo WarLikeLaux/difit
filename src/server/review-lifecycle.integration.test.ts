@@ -11,6 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DiffMode } from '../types/watch.js';
 
 import { AuthService } from './auth.js';
+import {
+  readReviewRegistrations,
+  registerReview,
+  registrationToReviewContext,
+} from './review-registry.js';
 import { writeCommentSessions } from './comment-storage.js';
 import {
   getHubReviews as getSecuredHubReviews,
@@ -294,7 +299,7 @@ describe('branch review lifecycle', () => {
         agentConnected: false,
         pendingMessages: 1,
         restartable: true,
-        viewerUrl: `${reviewPath}/?restart=1`,
+        viewerUrl: `${reviewPath}/`,
       }),
     ]);
 
@@ -490,7 +495,7 @@ describe('branch review lifecycle', () => {
     expect(currentComments.threads).toEqual([]);
   });
 
-  it('restarts an offline review from the ?restart viewer link', async () => {
+  it('restarts an offline review from its regular viewer link', async () => {
     const git = simpleGit(repositoryPath);
     const base = (await git.raw(['rev-list', '--max-parents=0', 'HEAD'])).trim();
     const startOptions = {
@@ -521,11 +526,9 @@ describe('branch review lifecycle', () => {
       running: false,
       restartable: true,
     });
-    expect(offlineReviews[0]?.viewerUrl).toBe(`/reviews/${context.id}/?restart=1`);
+    expect(offlineReviews[0]?.viewerUrl).toBe(`/reviews/${context.id}/`);
 
-    const restartResponse = await fetch(
-      `http://localhost:${hub.port}/reviews/${context.id}/?restart=1`,
-    );
+    const restartResponse = await fetch(`http://localhost:${hub.port}/reviews/${context.id}/`);
     expect(restartResponse.status).toBe(200);
     const restartPage = await restartResponse.text();
     expect(restartPage).toContain('Starting review server');
@@ -539,7 +542,13 @@ describe('branch review lifecycle', () => {
     expect(command.args).toEqual(['.', base, '--merge-base', '--include-untracked']);
     expect(cliEntry).toBeTruthy();
 
-    await fetch(`http://localhost:${hub.port}/reviews/${context.id}/?restart=1`);
+    await fetch(`http://localhost:${hub.port}/reviews/${context.id}/`);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+
+    const snapshotResponse = await fetch(
+      `http://localhost:${hub.port}/reviews/${context.id}/?snapshot=1`,
+    );
+    expect(await snapshotResponse.text()).not.toContain('Starting review server');
     expect(spawnMock).toHaveBeenCalledTimes(1);
 
     const revived = await startServer(startOptions);
@@ -547,16 +556,78 @@ describe('branch review lifecycle', () => {
     const runningReviews = await getHubReviews();
     expect(runningReviews[0]).toMatchObject({ id: context.id, running: true, restartable: false });
     expect(runningReviews[0]?.viewerUrl).toBe(`/reviews/${context.id}/`);
-    const redirectResponse = await fetch(
-      `http://localhost:${hub.port}/reviews/${context.id}/?restart=1`,
-      { redirect: 'manual' },
-    );
-    expect(redirectResponse.status).toBe(302);
-    expect(redirectResponse.headers.get('location')).toBe(`/reviews/${context.id}/`);
+    const runningResponse = await fetch(`http://localhost:${hub.port}/reviews/${context.id}/`);
+    expect(runningResponse.status).toBe(200);
     expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 
-  it('ignores the restart request when the checkout no longer matches', async () => {
+  it('opens a review from repository, branch and HAPI session without a review id', async () => {
+    const spawnMock = vi.fn((..._args: unknown[]) => ({ unref: () => {} }));
+    const hub = await startHubServer(9345, '127.0.0.1', {
+      spawnReviewServer: spawnMock as never,
+    });
+    hubServer = hub.server;
+    const url = new URL(`http://localhost:${hub.port}/open`);
+    url.searchParams.set('repo', repositoryPath);
+    url.searchParams.set('branch', 'feature/one');
+    url.searchParams.set('hapiSessionId', 'hapi-session-1');
+
+    const first = await fetch(url);
+    expect(first.status).toBe(200);
+    expect(await first.text()).toContain('Starting review server');
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(spawnMock.mock.calls[0]?.[0]).toMatchObject({
+      args: ['.', '--include-untracked'],
+      cwd: repositoryPath,
+      env: { HAPI_SESSION_ID: 'hapi-session-1' },
+    });
+
+    await fetch(url);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    url.searchParams.set('branch', 'other-branch');
+    const wrongBranch = await fetch(url);
+    expect(wrongBranch.status).toBe(409);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+
+    const review = await startServer({
+      selection: { baseCommitish: 'HEAD', targetCommitish: '.' },
+      repoPath: repositoryPath,
+      preferredPort: 9340,
+      openBrowser: false,
+      keepAlive: true,
+      diffMode: DiffMode.DOT,
+    });
+    reviewServer = review.server;
+    const [registration] = await readReviewRegistrations();
+    if (!registration) throw new Error('Review registration is missing');
+    await registerReview(
+      registrationToReviewContext(registration),
+      registration.port,
+      registration.pid,
+      'hapi-session-1',
+    );
+    url.searchParams.set('branch', 'feature/one');
+    const existing = await fetch(url, { redirect: 'manual' });
+    expect(existing.status).toBe(302);
+    expect(existing.headers.get('location')).toMatch(/^\/reviews\/[a-f0-9]{24}\/$/);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+
+    url.searchParams.set('hapiSessionId', 'hapi-session-2');
+    const anotherSession = await fetch(url);
+    expect(anotherSession.status).toBe(200);
+    expect(await anotherSession.text()).toContain('Starting review server');
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+    url.searchParams.set('hapiSessionId', 'hapi-session-1');
+
+    await closeServer(reviewServer);
+    reviewServer = undefined;
+    await fs.rm(repositoryPath, { recursive: true, force: true });
+    const archived = await fetch(url, { redirect: 'manual' });
+    expect(archived.status).toBe(302);
+    expect(archived.headers.get('location')).toBe(existing.headers.get('location'));
+  });
+
+  it('shows the saved snapshot when the checkout no longer matches', async () => {
     const git = simpleGit(repositoryPath);
     const base = (await git.raw(['rev-list', '--max-parents=0', 'HEAD'])).trim();
     const first = await startServer({
@@ -584,7 +655,7 @@ describe('branch review lifecycle', () => {
     const reviews = await getHubReviews();
     expect(reviews[0]).toMatchObject({ id: context.id, running: false, restartable: false });
     expect(reviews[0]?.viewerUrl).toBe(`/reviews/${context.id}/`);
-    const response = await fetch(`http://localhost:${hub.port}/reviews/${context.id}/?restart=1`);
+    const response = await fetch(`http://localhost:${hub.port}/reviews/${context.id}/`);
     expect(response.status).toBe(200);
     expect(await response.text()).not.toContain('Starting review server');
     expect(spawnMock).not.toHaveBeenCalled();

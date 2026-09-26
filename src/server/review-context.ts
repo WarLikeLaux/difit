@@ -32,6 +32,7 @@ interface CreateReviewContextOptions {
   selection: DiffSelection;
   reviewUrl?: string;
   git?: SimpleGit;
+  hapiSessionId?: string;
 }
 
 function shortHash(value: string): string {
@@ -52,6 +53,7 @@ export async function createReviewContext({
   selection,
   reviewUrl,
   git = simpleGit(repositoryPath),
+  hapiSessionId = process.env.VITEST ? undefined : process.env.HAPI_SESSION_ID?.trim(),
 }: CreateReviewContextOptions): Promise<ReviewContext> {
   const initialHead = await resolveRevision(git, 'HEAD');
   const branchValue = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
@@ -68,7 +70,8 @@ export async function createReviewContext({
     : followsBranch
       ? `branch:${branch}:base:${selection.baseCommitish}:mode:${baseMode}`
       : `revision:${selection.baseCommitish}:${resolvedTarget}:mode:${baseMode}`;
-  const id = hash(`${repositoryId}:${stableSource}`).slice(0, 24);
+  const sessionScope = followsBranch && hapiSessionId ? `:hapi-session:${hapiSessionId}` : '';
+  const id = hash(`${repositoryId}:${stableSource}${sessionScope}`).slice(0, 24);
 
   const resolvedBase =
     baseMode === 'merge-base'

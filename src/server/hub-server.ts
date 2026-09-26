@@ -1,8 +1,10 @@
 import { request as createHttpRequest, type Server } from 'http';
-import { basename, dirname, join } from 'path';
+import { realpath } from 'fs/promises';
+import { basename, dirname, isAbsolute, join } from 'path';
 import { fileURLToPath } from 'url';
 
 import express, { type Request, type Response } from 'express';
+import { simpleGit } from 'simple-git';
 
 import type { CommentThreadStatus, DiffCommentThread } from '../types/diff.js';
 
@@ -52,6 +54,52 @@ import { updateHapiReviewLink } from './hapi-review-link.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const OPEN_PAGE_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Opening review · DIFIT</title>
+<style>:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0e1116;color:#eef1f5}body{min-height:100vh;display:grid;place-items:center;margin:0}main{text-align:center;color:#aeb8c5;padding:20px}a{color:#70a5ff}</style>
+</head><body><main><p id="status">Starting review server…</p><a id="fallback" href="/" hidden>Open DIFIT hub</a></main>
+<script>
+const repo = __REPO__;
+const branch = __BRANCH__;
+const hapiSessionId = __SESSION__;
+let attempts = 0;
+async function poll() {
+  try {
+    const response = await fetch('/api/reviews');
+    const reviews = await response.json();
+    const review = reviews.find(item => item.repositoryPath === repo && (item.branch ?? null) === branch && item.hapiSessionId === hapiSessionId && item.running);
+    if (review) { location.replace('/reviews/' + encodeURIComponent(review.id) + '/'); return; }
+  } catch {}
+  if (++attempts < 60) { setTimeout(poll, 750); return; }
+  document.getElementById('status').textContent = 'The review server did not start.';
+  document.getElementById('fallback').hidden = false;
+}
+setTimeout(poll, 750);
+</script></body></html>`;
+
+function selectOpenReview(
+  registrations: ReviewRegistration[],
+  repositoryPath: string,
+  branch: string | undefined,
+  hapiSessionId: string,
+): ReviewRegistration | undefined {
+  return registrations
+    .filter(
+      (item) =>
+        item.repositoryPath === repositoryPath &&
+        item.branch === branch &&
+        item.hapiSessionId === hapiSessionId,
+    )
+    .sort((left, right) => {
+      const leftScore =
+        Number(left.hapiSessionId === hapiSessionId) * 2 + Number(left.followsBranch);
+      const rightScore =
+        Number(right.hapiSessionId === hapiSessionId) * 2 + Number(right.followsBranch);
+      return rightScore - leftScore;
+    })[0];
+}
+
 interface HubReviewThread {
   id: string;
   filePath: string;
@@ -67,6 +115,7 @@ export interface HubReview {
   repositoryName: string;
   repositoryPath: string;
   branch?: string;
+  hapiSessionId?: string;
   baseRef: string;
   targetRef: string;
   reviewUrl?: string;
@@ -200,6 +249,7 @@ export async function getHubReviews(auth = getDefaultAuthService()): Promise<Hub
         repositoryName: basename(registration.repositoryPath),
         repositoryPath: registration.repositoryPath,
         branch: registration.branch,
+        hapiSessionId: registration.hapiSessionId,
         baseRef: registration.baseRef,
         targetRef: registration.targetRef,
         reviewUrl: normalizeExternalReviewUrl(registration.reviewUrl),
@@ -212,9 +262,7 @@ export async function getHubReviews(auth = getDefaultAuthService()): Promise<Hub
         counts,
         threads,
         viewerUrl:
-          running || snapshot
-            ? `/reviews/${encodeURIComponent(registration.id)}/${restartable ? '?restart=1' : ''}`
-            : undefined,
+          running || snapshot ? `/reviews/${encodeURIComponent(registration.id)}/` : undefined,
         available: Boolean(running || snapshot),
         restartable,
         agentConnected: Boolean(running && registration.agentAttached && !branchState.stale),
@@ -326,7 +374,7 @@ const RESTART_PAGE_HTML = `<!doctype html>
     const spinner = document.getElementById('spinner');
     const status = document.getElementById('status');
     const fallback = document.getElementById('fallback');
-    document.getElementById('snapshotLink').href = target;
+    document.getElementById('snapshotLink').href = target + '?snapshot=1';
     const pollLimit = 60;
     let attempts = 0;
     async function poll() {
@@ -349,11 +397,7 @@ const RESTART_PAGE_HTML = `<!doctype html>
       setTimeout(poll, 750);
     }
     document.getElementById('retry').addEventListener('click', () => {
-      attempts = 0;
-      fallback.classList.add('hidden');
-      spinner.classList.remove('hidden');
-      status.textContent = 'Starting review server…';
-      setTimeout(poll, 750);
+      window.location.reload();
     });
     setTimeout(poll, 750);
   </script>
@@ -478,6 +522,81 @@ export async function startHubServer(
   app.get('/api/reviews', async (_req, res) => {
     res.json(await getHubReviews(auth));
   });
+  app.get('/open', async (req, res) => {
+    const repoParam = req.query.repo;
+    if (repoParam === undefined) {
+      res.redirect(302, '/');
+      return;
+    }
+    const branchParam = req.query.branch;
+    const sessionParam = req.query.hapiSessionId;
+    if (
+      typeof repoParam !== 'string' ||
+      !isAbsolute(repoParam) ||
+      repoParam.length > 4096 ||
+      (branchParam !== undefined &&
+        (typeof branchParam !== 'string' || branchParam.length > 255)) ||
+      typeof sessionParam !== 'string' ||
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(sessionParam)
+    ) {
+      res.status(400).send('Invalid review link');
+      return;
+    }
+
+    const registrations = await readReviewRegistrations();
+    const savedReview = selectOpenReview(registrations, repoParam, branchParam, sessionParam);
+    if (savedReview) {
+      res.redirect(302, `/reviews/${encodeURIComponent(savedReview.id)}/`);
+      return;
+    }
+
+    try {
+      const checkoutPath = await realpath(repoParam);
+      const gitRoot = (await simpleGit(checkoutPath).revparse(['--show-toplevel'])).trim();
+      const repositoryPath = await realpath(gitRoot);
+      const currentBranch = (
+        await simpleGit(repositoryPath).revparse(['--abbrev-ref', 'HEAD'])
+      ).trim();
+      const activeBranch = currentBranch === 'HEAD' ? undefined : currentBranch;
+      const branch = branchParam ?? activeBranch;
+      const registration = selectOpenReview(registrations, repositoryPath, branch, sessionParam);
+      if (registration) {
+        res.redirect(302, `/reviews/${encodeURIComponent(registration.id)}/`);
+        return;
+      }
+      if (branch !== activeBranch) {
+        res
+          .status(409)
+          .send(
+            'The repository is no longer on the requested branch. Open that branch to start a review.',
+          );
+        return;
+      }
+
+      const key = `${repositoryPath}\n${branch ?? ''}\n${sessionParam}`;
+      const now = Date.now();
+      if (now - (recentRestarts.get(key) ?? 0) >= RESTART_DEDUPE_MS) {
+        recentRestarts.set(key, now);
+        spawnReview(
+          {
+            args: ['.', '--include-untracked'],
+            cwd: repositoryPath,
+            env: { ...process.env, HAPI_SESSION_ID: sessionParam },
+          },
+          resolveDifitCliEntry(),
+        );
+      }
+      const nonce = res.locals.cspNonce as string;
+      res.type('html').send(
+        OPEN_PAGE_HTML.replaceAll('<script>', `<script nonce="${nonce}">`)
+          .replace('__REPO__', JSON.stringify(repositoryPath).replaceAll('<', '\\u003c'))
+          .replace('__BRANCH__', JSON.stringify(branch ?? null).replaceAll('<', '\\u003c'))
+          .replace('__SESSION__', JSON.stringify(sessionParam).replaceAll('<', '\\u003c')),
+      );
+    } catch {
+      res.status(404).send('Repository is unavailable');
+    }
+  });
   app.post('/api/reviews/:reviewId/close', async (req, res) => {
     const registration = (await readReviewRegistrations()).find(
       (candidate) => candidate.id === req.params.reviewId,
@@ -572,11 +691,14 @@ export async function startHubServer(
       return;
     }
 
-    if (req.method === 'GET' && req.query.restart !== undefined) {
-      if (await isReviewServerRunning(registration, auth)) {
-        res.redirect(302, `/reviews/${encodeURIComponent(registration.id)}/`);
-        return;
-      }
+    const requestPath = req.url.split('?')[0] ?? '/';
+    const running = await isReviewServerRunning(registration, auth);
+    if (
+      req.method === 'GET' &&
+      requestPath === '/' &&
+      !running &&
+      req.query.snapshot === undefined
+    ) {
       const plan = await getReviewRestartPlan(registration);
       if (plan.ok) {
         const now = Date.now();
@@ -598,7 +720,7 @@ export async function startHubServer(
       // Guards failed: fall through and serve the saved snapshot as usual.
     }
 
-    if (await isReviewServerRunning(registration, auth)) {
+    if (running) {
       const prefix = `/reviews/${encodeURIComponent(registration.id)}`;
       const upstreamPath = req.originalUrl.slice(prefix.length) || '/';
       const upstreamOrigin = `http://127.0.0.1:${registration.port}`;
@@ -632,7 +754,6 @@ export async function startHubServer(
       return;
     }
 
-    const requestPath = req.url.split('?')[0] ?? '/';
     const storedSnapshot = await readStoredReviewSnapshot(registration.id);
     if (!storedSnapshot) {
       res.status(503).send('This review has no saved snapshot yet. Reattach an agent once.');

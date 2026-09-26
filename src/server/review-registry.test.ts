@@ -135,6 +135,38 @@ describe('review registry', () => {
     expect(resolved.legacySessionKeys).toContain('review:mr-derived-id');
   });
 
+  it('reuses an older branch review only for its HAPI session', async () => {
+    const oldReview = {
+      id: 'legacy-review-id',
+      sessionKey: 'review:legacy-review-id',
+      repositoryId: 'repository-id',
+      repositoryPath: '/workspace/project',
+      branch: 'feature/dashboard',
+      baseRef: 'HEAD',
+      targetRef: '.',
+      baseMode: 'direct' as const,
+      followsBranch: true,
+      initialHead: 'abcdef',
+      legacySessionKeys: [],
+    };
+    await registerReview(oldReview, 5001, 1234, 'session-1');
+    const scopedReview = {
+      ...oldReview,
+      id: 'scoped-review-id',
+      sessionKey: 'review:scoped-review-id',
+    };
+
+    await expect(
+      reuseExistingWorkingTreeIdentity(scopedReview, 'session-1'),
+    ).resolves.toMatchObject({
+      id: 'legacy-review-id',
+      sessionKey: 'review:legacy-review-id',
+    });
+    await expect(reuseExistingWorkingTreeIdentity(scopedReview, 'session-2')).resolves.toEqual(
+      scopedReview,
+    );
+  });
+
   it('keeps the original review identity when the same MR is reopened', async () => {
     const existingContext = {
       id: 'branch-review-id',

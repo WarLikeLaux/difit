@@ -42,6 +42,7 @@ import { logoutHandler } from './auth-http.js';
 import { readCommentSessions, writeCommentSessions } from './comment-storage.js';
 import { captureResolvedLessons } from './lesson-capture.js';
 import { computeRepositoryId } from './lesson-storage.js';
+import { listProjectFiles, searchProjectCode } from './project-files.js';
 import {
   createReviewContext,
   getReviewBranchState,
@@ -606,6 +607,40 @@ export async function startServer(options: ServerOptions): Promise<{
     } catch (error) {
       console.error('Error fetching revisions:', error);
       res.status(500).json({ error: 'Failed to fetch revisions' });
+    }
+  });
+
+  app.get('/api/project/files', async (_req, res) => {
+    if (options.stdinDiff) {
+      res.status(404).json({ error: 'Project files are not available for stdin diff' });
+      return;
+    }
+    try {
+      res.json({ files: await listProjectFiles(repositoryPath) });
+    } catch (error) {
+      console.error('Error listing project files:', error);
+      res.status(500).json({ error: 'Failed to list project files' });
+    }
+  });
+
+  app.get('/api/project/search', async (req, res) => {
+    if (options.stdinDiff) {
+      res.status(404).json({ error: 'Project search is not available for stdin diff' });
+      return;
+    }
+    if (typeof req.query.q !== 'string') {
+      res.status(400).json({ error: 'Invalid search query' });
+      return;
+    }
+    try {
+      res.json(await searchProjectCode(repositoryPath, req.query.q));
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Search query must')) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Error searching project code:', error);
+      res.status(500).json({ error: 'Failed to search project code' });
     }
   });
 

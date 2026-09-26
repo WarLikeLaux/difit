@@ -35,6 +35,8 @@ import {
 } from '../utils/diffSelection';
 
 import { CodePreviewModal } from './components/CodePreviewModal';
+import { ProjectExplorer } from './components/ProjectExplorer';
+import { ProjectFilePreview } from './components/ProjectFilePreview';
 import { CommentsView } from './components/CommentsView';
 import { DiffQuickMenu } from './components/DiffQuickMenu';
 import { DiffViewer } from './components/DiffViewer';
@@ -243,6 +245,11 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
   const [sidebarWidth, setSidebarWidth] = useState(getInitialSidebarWidth);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFileTreeOpen, setIsFileTreeOpen] = useState(getInitialFileTreeOpen);
+  const [sidebarView, setSidebarView] = useState<'changes' | 'project'>('changes');
+  const [projectFileFocusRequest, setProjectFileFocusRequest] = useState(0);
+  const [projectPreview, setProjectPreview] = useState<{ path: string; line?: number } | null>(
+    null,
+  );
   const [showResolvedComments, setShowResolvedComments] = useState(getInitialShowResolvedComments);
   const [isDragging, setIsDragging] = useState(false);
   const [showSparkles, setShowSparkles] = useState(false);
@@ -393,6 +400,34 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
     hasSelectedInitialMainViewRef.current = true;
     setMainView(view);
   }, []);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== 'p' ||
+        (!event.ctrlKey && !event.metaKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        event.defaultPrevented ||
+        !diffData ||
+        diffData.reviewOffline ||
+        diffData.baseCommitish === 'stdin' ||
+        diffData.targetCommitish === 'stdin' ||
+        document.querySelector('[role="dialog"][aria-modal="true"]')
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      selectMainView('diff');
+      setIsFileTreeOpen(true);
+      setSidebarView('project');
+      setProjectFileFocusRequest((request) => request + 1);
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [diffData, selectMainView]);
   const skipNextCommentSyncRef = useRef(false);
   // Last server comment version seen; echoed back as baseVersion so the server can detect concurrent writes.
   const serverCommentVersionRef = useRef<number | null>(null);
@@ -1873,6 +1908,10 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
     settings.editor.id !== 'none' &&
     settings.editor.command.trim() !== '' &&
     settings.editor.argsTemplate.trim() !== '';
+  const canBrowseProject =
+    !diffData.reviewOffline &&
+    diffData.baseCommitish !== 'stdin' &&
+    diffData.targetCommitish !== 'stdin';
   const reviewsDashboardUrl = getReviewsDashboardUrl();
 
   return (
@@ -2236,6 +2275,15 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
             </CodePreviewModal>
           )}
 
+        {projectPreview && (
+          <ProjectFilePreview
+            path={projectPreview.path}
+            line={projectPreview.line}
+            syntaxTheme={settings.syntaxTheme}
+            onClose={() => setProjectPreview(null)}
+          />
+        )}
+
         {mainView === null && (
           <main className="flex flex-1 items-center justify-center text-sm text-github-text-secondary">
             Loading comments…
@@ -2323,24 +2371,52 @@ function ReviewWorkspace({ activeReviewId, reviews, onSelectReview }: ReviewWork
                   : undefined,
               }}
             >
-              <div className="flex-1 overflow-y-auto">
-                <FileList
-                  files={diffData.files}
-                  onScrollToFile={scrollVisibleFileIntoDiffContainer}
-                  onFileSelected={isMobile ? handleMobileFileSelected : undefined}
-                  comments={diffThreads}
-                  reviewedFiles={viewedFiles}
-                  onToggleReviewed={toggleFileReviewed}
-                  onToggleFolderReviewed={toggleFolderReviewed}
-                  selectedFileIndex={
-                    cursor?.fileIndex ??
-                    (isFileByFileView && activeSingleFileEntry
-                      ? activeSingleFileEntry.fileIndex
-                      : null)
-                  }
-                  codeFilterText={codeFilterText}
-                  onCodeFilterTextChange={setCodeFilterText}
-                />
+              {canBrowseProject && (
+                <div className="grid shrink-0 grid-cols-2 border-b border-github-border bg-github-bg-secondary p-2">
+                  <button
+                    type="button"
+                    aria-pressed={sidebarView === 'changes'}
+                    onClick={() => setSidebarView('changes')}
+                    className={`rounded px-2 py-1.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-github-accent ${sidebarView === 'changes' ? 'bg-github-bg-tertiary text-github-text-primary' : 'text-github-text-secondary hover:text-github-text-primary'}`}
+                  >
+                    Changes
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={sidebarView === 'project'}
+                    onClick={() => setSidebarView('project')}
+                    className={`rounded px-2 py-1.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-github-accent ${sidebarView === 'project' ? 'bg-github-bg-tertiary text-github-text-primary' : 'text-github-text-secondary hover:text-github-text-primary'}`}
+                  >
+                    Project
+                  </button>
+                </div>
+              )}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {sidebarView === 'project' && canBrowseProject ? (
+                  <ProjectExplorer
+                    onOpenFile={(path, line) => setProjectPreview({ path, line })}
+                    onFileSelected={isMobile ? handleMobileFileSelected : undefined}
+                    focusRequest={projectFileFocusRequest}
+                  />
+                ) : (
+                  <FileList
+                    files={diffData.files}
+                    onScrollToFile={scrollVisibleFileIntoDiffContainer}
+                    onFileSelected={isMobile ? handleMobileFileSelected : undefined}
+                    comments={diffThreads}
+                    reviewedFiles={viewedFiles}
+                    onToggleReviewed={toggleFileReviewed}
+                    onToggleFolderReviewed={toggleFolderReviewed}
+                    selectedFileIndex={
+                      cursor?.fileIndex ??
+                      (isFileByFileView && activeSingleFileEntry
+                        ? activeSingleFileEntry.fileIndex
+                        : null)
+                    }
+                    codeFilterText={codeFilterText}
+                    onCodeFilterTextChange={setCodeFilterText}
+                  />
+                )}
               </div>
               {!isMobile && (
                 <div className="p-4 border-t border-github-border flex justify-between items-center">

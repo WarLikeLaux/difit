@@ -58,6 +58,19 @@ describe('review context', () => {
     expect(first.id).not.toBe(second.id);
   });
 
+  it('isolates reviews for different HAPI sessions on the same branch', async () => {
+    const options = {
+      repositoryPath: '/workspace/project',
+      repositoryId: 'repository-id',
+      selection: { baseCommitish: 'HEAD', targetCommitish: '.' },
+      git: createGitMock({ branch: 'feature/one' }) as never,
+    };
+    const first = await createReviewContext({ ...options, hapiSessionId: 'session-1' });
+    const second = await createReviewContext({ ...options, hapiSessionId: 'session-2' });
+    expect(first.id).not.toBe(second.id);
+    expect(first.sessionKey).not.toBe(second.sessionKey);
+  });
+
   it('marks a branch review stale after checkout changes branch', async () => {
     const context = await createReviewContext({
       repositoryPath: '/workspace/project',

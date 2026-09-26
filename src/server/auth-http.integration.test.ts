@@ -69,6 +69,40 @@ describe('browser and CLI authentication', () => {
     else process.env.DIFIT_CONFIG_DIR = originalConfigDirectory;
   });
 
+  it('returns to an open-review link after browser login', async () => {
+    const hub = await startHubServer(await availablePort(), '127.0.0.1', {
+      authService: auth,
+      publicOrigin: 'https://reviews.example.test',
+    });
+    hubServer = hub.server;
+    const hubUrl = `http://127.0.0.1:${hub.port}`;
+    const next = `/open?repo=${encodeURIComponent(repositoryPath)}&branch=feature%2Freview&hapiSessionId=session-1`;
+    const navigate = await fetch(`${hubUrl}${next}`, {
+      headers: { Host: 'reviews.example.test', Accept: 'text/html' },
+      redirect: 'manual',
+    });
+    expect(navigate.status).toBe(303);
+    const loginPath = navigate.headers.get('location');
+    expect(loginPath).toBe(`/auth/login?next=${encodeURIComponent(next)}`);
+
+    const loginPage = await fetch(`${hubUrl}${loginPath}`, {
+      headers: { Host: 'reviews.example.test' },
+    });
+    expect(await loginPage.text()).toContain(`/auth/login?next=${encodeURIComponent(next)}`);
+    const login = await fetch(`${hubUrl}${loginPath}`, {
+      method: 'POST',
+      body: new URLSearchParams({ accessKey: await auth.getAccessKey() }).toString(),
+      headers: {
+        Host: 'reviews.example.test',
+        Origin: 'https://reviews.example.test',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      redirect: 'manual',
+    });
+    expect(login.status).toBe(303);
+    expect(login.headers.get('location')).toBe(next);
+  });
+
   it('protects hub, proxy, direct viewer, mutations, and an open SSE after logout', async () => {
     const viewer = await startServer({
       authService: auth,

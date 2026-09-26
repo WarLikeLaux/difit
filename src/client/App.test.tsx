@@ -955,6 +955,48 @@ describe('App Component - Comment sync', () => {
 });
 
 describe('App Component - Diff Mode Persistence', () => {
+  it('opens project file search with Ctrl+P and Cmd+P in an active review', async () => {
+    mockFetch(mockDiffResponse);
+    const originalFetch = vi.mocked(global.fetch).getMockImplementation();
+    vi.mocked(global.fetch).mockImplementation((input, init) => {
+      if (String(input).includes('/api/project/files')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ files: ['src/test.ts'] }),
+        } as Response);
+      }
+      return originalFetch!(input, init);
+    });
+
+    renderApp();
+    await screen.findByRole('button', { name: 'Project' });
+
+    const ctrlP = new KeyboardEvent('keydown', {
+      key: 'p',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => document.dispatchEvent(ctrlP));
+    expect(ctrlP.defaultPrevented).toBe(true);
+
+    const fileSearch = await screen.findByPlaceholderText('Find project file...');
+    expect(fileSearch).toHaveFocus();
+    fireEvent.change(fileSearch, { target: { value: 'test' } });
+    fileSearch.blur();
+
+    const cmdP = new KeyboardEvent('keydown', {
+      key: 'p',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => document.dispatchEvent(cmdP));
+    expect(cmdP.defaultPrevented).toBe(true);
+    expect(fileSearch).toHaveFocus();
+    expect(fileSearch).toHaveValue('test');
+  });
+
   it('warns when an offline review is showing a saved snapshot', async () => {
     mockFetch({
       ...mockDiffResponse,
@@ -967,6 +1009,16 @@ describe('App Component - Diff Mode Persistence', () => {
     expect(
       await screen.findByText(/This review is offline\. You are viewing a saved snapshot/),
     ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Project' })).not.toBeInTheDocument();
+
+    const ctrlP = new KeyboardEvent('keydown', {
+      key: 'p',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => document.dispatchEvent(ctrlP));
+    expect(ctrlP.defaultPrevented).toBe(false);
   });
 
   it('initializes the selected view mode from localStorage', async () => {

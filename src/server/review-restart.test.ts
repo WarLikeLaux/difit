@@ -6,6 +6,7 @@ import { simpleGit } from 'simple-git';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReviewRegistration } from './review-registry.js';
+import { createReviewContext } from './review-context.js';
 
 import {
   buildReviewRestartArgs,
@@ -74,6 +75,16 @@ describe('buildReviewRestartArgs', () => {
       ),
     ).toEqual([head, 'main', '--merge-base', '--include-untracked']);
   });
+
+  it('passes the registered GitLab review URL to the CLI', () => {
+    const reviewUrl = 'https://gitlab.example.test/group/project/-/merge_requests/1';
+    expect(buildReviewRestartArgs(makeRegistration({ reviewUrl }))).toEqual([
+      '.',
+      '--gitlab-mr',
+      reviewUrl,
+      '--include-untracked',
+    ]);
+  });
 });
 
 describe('getReviewRestartPlan', () => {
@@ -137,8 +148,15 @@ describe('getReviewRestartPlan', () => {
     await git.add('.');
     await git.commit('feature');
     const head = (await git.revparse(['HEAD'])).trim();
+    const context = await createReviewContext({
+      repositoryPath,
+      repositoryId: 'b'.repeat(64),
+      selection: { baseCommitish: `${head}^`, targetCommitish: head, baseMode: 'direct' },
+      git,
+    });
     const plan = await getReviewRestartPlan(
       makeRegistration({
+        id: context.id,
         repositoryPath,
         followsBranch: false,
         branch: undefined,
@@ -150,6 +168,40 @@ describe('getReviewRestartPlan', () => {
       ok: true,
       command: { args: [head, `${head}^`, '--include-untracked'] },
     });
+  });
+
+  it('refuses a revision review when its HEAD now identifies another review', async () => {
+    const git = simpleGit(repositoryPath);
+    const originalHead = (await git.revparse(['HEAD'])).trim();
+    await fs.writeFile(join(repositoryPath, 'example.txt'), 'base\nfeature\n');
+    await git.add('.');
+    await git.commit('feature');
+    const plan = await getReviewRestartPlan(
+      makeRegistration({
+        repositoryPath,
+        followsBranch: false,
+        targetRef: 'HEAD',
+        baseRef: originalHead,
+      }),
+    );
+    expect(plan).toMatchObject({
+      ok: false,
+      reason: 'Review identity changed since the last launch',
+    });
+  });
+
+  it('refuses a GitLab review after switching away from its branch', async () => {
+    const git = simpleGit(repositoryPath);
+    await git.checkoutLocalBranch('feature/two');
+    const plan = await getReviewRestartPlan(
+      makeRegistration({
+        repositoryPath,
+        followsBranch: false,
+        targetRef: 'HEAD',
+        reviewUrl: 'https://gitlab.example.test/group/project/-/merge_requests/1',
+      }),
+    );
+    expect(plan).toMatchObject({ ok: false, reason: 'Repository is now on feature/two' });
   });
 
   it('refuses revision reviews whose commits are gone', async () => {

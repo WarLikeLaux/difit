@@ -346,7 +346,11 @@ export function requireAuthentication(
       .split(',')
       .some((value) => value.trim().toLowerCase().startsWith('text/html'));
     if (options.loginPath && req.method === 'GET' && acceptsHtml) {
-      res.redirect(303, options.loginPath);
+      const loginPath =
+        req.path === '/open'
+          ? `${options.loginPath}?next=${encodeURIComponent(req.originalUrl)}`
+          : options.loginPath;
+      res.redirect(303, loginPath);
       return;
     }
     res.status(401).json({ error: 'Authentication required' });

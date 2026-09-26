@@ -5,7 +5,8 @@ import { fileURLToPath } from 'url';
 
 import { simpleGit, type SimpleGit } from 'simple-git';
 
-import { getReviewBranchState } from './review-context.js';
+import { normalizeGitLabMergeRequestUrl } from '../cli/gitlab.js';
+import { createReviewContext, getReviewBranchState } from './review-context.js';
 import { registrationToReviewContext, type ReviewRegistration } from './review-registry.js';
 
 // Single-positional CLI invocations imply these bases (resolveDiffSelection in src/cli).
@@ -32,6 +33,7 @@ export function buildReviewRestartArgs(registration: ReviewRegistration): string
     args.push(registration.baseRef);
   }
   if (registration.baseMode === 'merge-base') args.push('--merge-base');
+  if (registration.reviewUrl) args.push('--gitlab-mr', registration.reviewUrl);
   // Match scripts/deploy-local.sh, which restarts reviews with untracked files included.
   args.push('--include-untracked');
   return args;
@@ -50,6 +52,12 @@ export async function getReviewRestartPlan(
     return { ok: false, reason: 'Repository directory is missing' };
   }
   const git = gitFactory(registration.repositoryPath);
+  if (
+    registration.reviewUrl &&
+    normalizeGitLabMergeRequestUrl(registration.reviewUrl) !== registration.reviewUrl
+  ) {
+    return { ok: false, reason: 'Review URL cannot be restored by the CLI' };
+  }
   if (registration.followsBranch) {
     if (!registration.branch) {
       return { ok: false, reason: 'Registration records no branch to follow' };
@@ -68,6 +76,30 @@ export async function getReviewRestartPlan(
       } catch {
         return { ok: false, reason: `Revision ${revision} no longer resolves` };
       }
+    }
+    if (registration.branch && registration.targetRef === 'HEAD') {
+      const currentBranch = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+      if (currentBranch !== registration.branch) {
+        return { ok: false, reason: `Repository is now on ${currentBranch}` };
+      }
+    }
+    try {
+      const currentContext = await createReviewContext({
+        repositoryPath: registration.repositoryPath,
+        repositoryId: registration.repositoryId,
+        selection: {
+          baseCommitish: registration.baseRef,
+          targetCommitish: registration.targetRef,
+          baseMode: registration.baseMode === 'merge-base' ? 'merge-base' : 'direct',
+        },
+        reviewUrl: registration.reviewUrl,
+        git,
+      });
+      if (currentContext.id !== registration.id) {
+        return { ok: false, reason: 'Review identity changed since the last launch' };
+      }
+    } catch {
+      return { ok: false, reason: 'Review identity cannot be restored' };
     }
   }
   const env: NodeJS.ProcessEnv = { ...process.env };
