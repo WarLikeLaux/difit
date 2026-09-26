@@ -140,6 +140,23 @@ export async function readReviewRegistrations(): Promise<ReviewRegistration[]> {
   );
 }
 
+export function registrationToReviewContext(registration: ReviewRegistration): ReviewContext {
+  return {
+    id: registration.id,
+    sessionKey: registration.sessionKey,
+    repositoryId: registration.repositoryId,
+    repositoryPath: registration.repositoryPath,
+    branch: registration.branch,
+    baseRef: registration.baseRef,
+    targetRef: registration.targetRef,
+    baseMode: registration.baseMode === 'merge-base' ? 'merge-base' : 'direct',
+    reviewUrl: registration.reviewUrl,
+    followsBranch: registration.followsBranch,
+    initialHead: registration.initialHead,
+    legacySessionKeys: [],
+  };
+}
+
 export async function reuseExistingWorkingTreeIdentity(
   context: ReviewContext,
 ): Promise<ReviewContext> {

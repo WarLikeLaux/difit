@@ -6,7 +6,7 @@ import { join } from 'path';
 
 import { simpleGit } from 'simple-git';
 import { fetch } from 'undici';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DiffMode } from '../types/watch.js';
 
@@ -293,7 +293,8 @@ describe('branch review lifecycle', () => {
         id: context.id,
         agentConnected: false,
         pendingMessages: 1,
-        viewerUrl: `${reviewPath}/`,
+        restartable: true,
+        viewerUrl: `${reviewPath}/?restart=1`,
       }),
     ]);
 
@@ -487,5 +488,105 @@ describe('branch review lifecycle', () => {
       await fetch(`http://localhost:${second.port}/api/comments-json`)
     ).json()) as { threads: Array<{ id: string }> };
     expect(currentComments.threads).toEqual([]);
+  });
+
+  it('restarts an offline review from the ?restart viewer link', async () => {
+    const git = simpleGit(repositoryPath);
+    const base = (await git.raw(['rev-list', '--max-parents=0', 'HEAD'])).trim();
+    const startOptions = {
+      selection: { baseCommitish: base, targetCommitish: '.', baseMode: 'merge-base' },
+      repoPath: repositoryPath,
+      preferredPort: 9340,
+      openBrowser: false,
+      keepAlive: true,
+      diffMode: DiffMode.DOT,
+    } as const;
+    const first = await startServer(startOptions);
+    reviewServer = first.server;
+    const context = (await (
+      await fetch(`http://localhost:${first.port}/api/review-context`)
+    ).json()) as { id: string };
+    await closeServer(reviewServer);
+    reviewServer = undefined;
+
+    const spawnMock = vi.fn(() => ({ unref: () => {} }));
+    const hub = await startHubServer(9345, '127.0.0.1', {
+      spawnReviewServer: spawnMock as never,
+    });
+    hubServer = hub.server;
+
+    const offlineReviews = await getHubReviews();
+    expect(offlineReviews[0]).toMatchObject({
+      id: context.id,
+      running: false,
+      restartable: true,
+    });
+    expect(offlineReviews[0]?.viewerUrl).toBe(`/reviews/${context.id}/?restart=1`);
+
+    const restartResponse = await fetch(
+      `http://localhost:${hub.port}/reviews/${context.id}/?restart=1`,
+    );
+    expect(restartResponse.status).toBe(200);
+    const restartPage = await restartResponse.text();
+    expect(restartPage).toContain('Starting review server');
+    expect(restartPage).toMatch(/<script nonce="/);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [command, cliEntry] = spawnMock.mock.calls[0] as unknown as [
+      { args: string[]; cwd: string },
+      string,
+    ];
+    expect(command.cwd).toBe(repositoryPath);
+    expect(command.args).toEqual(['.', base, '--merge-base', '--include-untracked']);
+    expect(cliEntry).toBeTruthy();
+
+    await fetch(`http://localhost:${hub.port}/reviews/${context.id}/?restart=1`);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+
+    const revived = await startServer(startOptions);
+    reviewServer = revived.server;
+    const runningReviews = await getHubReviews();
+    expect(runningReviews[0]).toMatchObject({ id: context.id, running: true, restartable: false });
+    expect(runningReviews[0]?.viewerUrl).toBe(`/reviews/${context.id}/`);
+    const redirectResponse = await fetch(
+      `http://localhost:${hub.port}/reviews/${context.id}/?restart=1`,
+      { redirect: 'manual' },
+    );
+    expect(redirectResponse.status).toBe(302);
+    expect(redirectResponse.headers.get('location')).toBe(`/reviews/${context.id}/`);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores the restart request when the checkout no longer matches', async () => {
+    const git = simpleGit(repositoryPath);
+    const base = (await git.raw(['rev-list', '--max-parents=0', 'HEAD'])).trim();
+    const first = await startServer({
+      selection: { baseCommitish: base, targetCommitish: '.', baseMode: 'merge-base' },
+      repoPath: repositoryPath,
+      preferredPort: 9340,
+      openBrowser: false,
+      keepAlive: true,
+      diffMode: DiffMode.DOT,
+    });
+    reviewServer = first.server;
+    const context = (await (
+      await fetch(`http://localhost:${first.port}/api/review-context`)
+    ).json()) as { id: string };
+    await closeServer(reviewServer);
+    reviewServer = undefined;
+    await git.checkoutLocalBranch('feature/two');
+
+    const spawnMock = vi.fn(() => ({ unref: () => {} }));
+    const hub = await startHubServer(9345, '127.0.0.1', {
+      spawnReviewServer: spawnMock as never,
+    });
+    hubServer = hub.server;
+
+    const reviews = await getHubReviews();
+    expect(reviews[0]).toMatchObject({ id: context.id, running: false, restartable: false });
+    expect(reviews[0]?.viewerUrl).toBe(`/reviews/${context.id}/`);
+    const response = await fetch(`http://localhost:${hub.port}/reviews/${context.id}/?restart=1`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain('Starting review server');
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 });

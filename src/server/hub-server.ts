@@ -26,12 +26,14 @@ import {
   deleteAgentEventInbox,
   getPendingAgentEventCount,
 } from './agent-event-inbox.js';
-import { getReviewBranchState, type ReviewContext } from './review-context.js';
+import { getReviewBranchState } from './review-context.js';
 import {
   deleteReviewRegistration,
   readReviewRegistrations,
+  registrationToReviewContext,
   type ReviewRegistration,
 } from './review-registry.js';
+import { getReviewRestartPlan, resolveDifitCliEntry, spawnReviewServer } from './review-restart.js';
 import {
   deleteReviewSnapshot,
   readReviewSnapshot,
@@ -78,6 +80,7 @@ export interface HubReview {
   threads: HubReviewThread[];
   viewerUrl?: string;
   available: boolean;
+  restartable: boolean;
   agentConnected: boolean;
   pendingMessages: number;
   kind: 'working-tree' | 'merge-request' | 'commit';
@@ -86,6 +89,7 @@ export interface HubReview {
 
 export interface HubServerOptions {
   terminateProcess?: (pid: number) => void;
+  spawnReviewServer?: typeof spawnReviewServer;
   publicOrigin?: string;
   authService?: AuthService;
 }
@@ -125,23 +129,6 @@ function summarizeThread(thread: DiffCommentThread): HubReviewThread {
     updatedAt: lastMessage?.updatedAt ?? thread.updatedAt,
     lastAuthor: lastMessage?.author,
     lastMessage: lastMessage?.body ?? '',
-  };
-}
-
-function toReviewContext(registration: ReviewRegistration): ReviewContext {
-  return {
-    id: registration.id,
-    sessionKey: registration.sessionKey,
-    repositoryId: registration.repositoryId,
-    repositoryPath: registration.repositoryPath,
-    branch: registration.branch,
-    baseRef: registration.baseRef,
-    targetRef: registration.targetRef,
-    baseMode: registration.baseMode === 'merge-base' ? 'merge-base' : 'direct',
-    reviewUrl: normalizeExternalReviewUrl(registration.reviewUrl),
-    followsBranch: registration.followsBranch,
-    initialHead: registration.initialHead,
-    legacySessionKeys: [],
   };
 }
 
@@ -191,8 +178,10 @@ export async function getHubReviews(auth = getDefaultAuthService()): Promise<Hub
       const threads = (sessions[registration.sessionKey]?.threads ?? [])
         .map(summarizeThread)
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-      const branchState = await getReviewBranchState(toReviewContext(registration));
+      const branchState = await getReviewBranchState(registrationToReviewContext(registration));
       const running = await isReviewServerRunning(registration, auth);
+      const restartable =
+        !running && snapshot !== undefined && (await getReviewRestartPlan(registration)).ok;
       const { kind, label } = getReviewKind(registration);
       const counts: HubReview['counts'] = {
         open: 0,
@@ -223,8 +212,11 @@ export async function getHubReviews(auth = getDefaultAuthService()): Promise<Hub
         counts,
         threads,
         viewerUrl:
-          running || snapshot ? `/reviews/${encodeURIComponent(registration.id)}/` : undefined,
+          running || snapshot
+            ? `/reviews/${encodeURIComponent(registration.id)}/${restartable ? '?restart=1' : ''}`
+            : undefined,
         available: Boolean(running || snapshot),
+        restartable,
         agentConnected: Boolean(running && registration.agentAttached && !branchState.stale),
         pendingMessages,
         kind,
@@ -302,6 +294,72 @@ function openEventStream(req: Request, res: Response, initialData: unknown): voi
   const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 15_000);
   req.on('close', () => clearInterval(heartbeat));
 }
+
+const RESTART_DEDUPE_MS = 15_000;
+
+const RESTART_PAGE_HTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="icon" href="/favicon.svg?v=3" type="image/svg+xml" />
+  <title>Starting review · DIFIT</title>
+  <style>
+    :root{color-scheme:dark;font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;background:#0e1116;color:#eef1f5}
+    body{margin:0;display:grid;place-items:center;min-height:100vh}
+    .box{text-align:center;color:#8e98a7;font-size:14px;max-width:420px;padding:0 18px}
+    .spinner{width:26px;height:26px;margin:0 auto 14px;border:3px solid #2b323d;border-top-color:#70a5ff;border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    a,button{color:#70a5ff;background:none;border:0;padding:0;font:inherit;cursor:pointer;text-decoration:underline}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <main class="box">
+    <div id="spinner" class="spinner" role="status" aria-live="polite"></div>
+    <p id="status">Starting review server…</p>
+    <p id="fallback" class="hidden">The review server did not come up. <a id="snapshotLink" href="/">Open the saved snapshot</a> or <button id="retry" type="button">try again</button>.</p>
+  </main>
+  <script>
+    const reviewId = "__REVIEW_ID__";
+    const target = '/reviews/' + encodeURIComponent(reviewId) + '/';
+    const spinner = document.getElementById('spinner');
+    const status = document.getElementById('status');
+    const fallback = document.getElementById('fallback');
+    document.getElementById('snapshotLink').href = target;
+    const pollLimit = 60;
+    let attempts = 0;
+    async function poll() {
+      attempts += 1;
+      try {
+        const response = await fetch('/api/reviews');
+        const reviews = await response.json();
+        const review = reviews.find((item) => item.id === reviewId);
+        if (review && review.running) {
+          window.location.replace(target);
+          return;
+        }
+      } catch {}
+      if (attempts >= pollLimit) {
+        spinner.classList.add('hidden');
+        status.textContent = 'The review server did not come up.';
+        fallback.classList.remove('hidden');
+        return;
+      }
+      setTimeout(poll, 750);
+    }
+    document.getElementById('retry').addEventListener('click', () => {
+      attempts = 0;
+      fallback.classList.add('hidden');
+      spinner.classList.remove('hidden');
+      status.textContent = 'Starting review server…';
+      setTimeout(poll, 750);
+    });
+    setTimeout(poll, 750);
+  </script>
+</body>
+</html>
+`;
 
 const HUB_HTML = `<!doctype html>
 <html lang="en">
@@ -386,6 +444,8 @@ export async function startHubServer(
   app.use(requireBrowserMutationOrigin());
   app.post('/auth/logout', logoutHandler(auth));
   const clients = new Set<import('express').Response>();
+  const spawnReview = options.spawnReviewServer ?? spawnReviewServer;
+  const recentRestarts = new Map<string, number>();
   const archivedWatchClients = new Map<string, Set<Response>>();
   const archivedWriteQueues = new Map<string, Promise<void>>();
   const withArchivedWriteLock = async <T>(reviewId: string, operation: () => Promise<T>) => {
@@ -510,6 +570,32 @@ export async function startHubServer(
     if (!registration) {
       res.status(404).send('Review not found');
       return;
+    }
+
+    if (req.method === 'GET' && req.query.restart !== undefined) {
+      if (await isReviewServerRunning(registration, auth)) {
+        res.redirect(302, `/reviews/${encodeURIComponent(registration.id)}/`);
+        return;
+      }
+      const plan = await getReviewRestartPlan(registration);
+      if (plan.ok) {
+        const now = Date.now();
+        if (now - (recentRestarts.get(registration.id) ?? 0) >= RESTART_DEDUPE_MS) {
+          recentRestarts.set(registration.id, now);
+          spawnReview(plan.command, resolveDifitCliEntry());
+        }
+        const nonce = res.locals.cspNonce as string;
+        res
+          .type('html')
+          .send(
+            RESTART_PAGE_HTML.replaceAll('<script>', `<script nonce="${nonce}">`).replace(
+              '"__REVIEW_ID__"',
+              JSON.stringify(registration.id).replaceAll('<', '\\u003c'),
+            ),
+          );
+        return;
+      }
+      // Guards failed: fall through and serve the saved snapshot as usual.
     }
 
     if (await isReviewServerRunning(registration, auth)) {
